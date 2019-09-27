@@ -1,0 +1,6 @@
+[submodule "sound_project/components/arduino"]
+	path = sound_project/components/arduino
+	url = https://github.com/espressif/arduino-esp32.git
+[submodule "sound_project/sound_project/components/arduino"]
+	path = sound_project/sound_project/components/arduino
+	url = https://github.com/espressif/arduino-esp32.git

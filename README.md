@@ -10,3 +10,12 @@
 2. make flash
 3. make app ; for compiling just cpp
 4. make app-flash ; for flashing just .elf 
+
+## Todo:
+
+- [x] ESP-IDF/ADF + Arduino 28.09
+- [] ESP-Mic / Line-in Datastream reading
+- [] Reading SD card files
+- [] ESP-DSP <- FIR / FFT  
+- TBD...
+

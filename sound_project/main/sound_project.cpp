@@ -5,152 +5,131 @@
 #include "freertos/task.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
+
 #include "audio_element.h"
 #include "audio_pipeline.h"
 #include "audio_event_iface.h"
 #include "audio_common.h"
 #include "audio_hal.h"
-#include "fatfs_stream.h"
+
 #include "i2s_stream.h"
-#include "wav_encoder.h"
+
+#include "raw_stream.h"
+#include "filter_resample.h"
+
 #include "esp_peripherals.h"
-#include "periph_sdcard.h"
+#include "periph_button.h"
 
 #ifdef ARDUINO_ARCH_ESP32
 #include "esp32-hal-log.h"
 #endif
 
-static const char *TAG = "REC_WAV_SDCARD";
+static const char *TAG = "record_raw";
 
-#define RECORD_TIME_SECONDS 20
+#define AUDIO_CHUNKSIZE 1024
 
 extern "C" void app_main() {
     initArduino();
 
-    Serial.begin(115200);
+    Serial.begin(921000);
 
-    audio_pipeline_handle_t pipeline;
-    audio_element_handle_t fatfs_stream_writer, i2s_stream_reader, wav_encoder;
-
-    esp_log_level_set("*", ESP_LOG_WARN);
+    esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
-    ESP_LOGI(TAG, "[ 1 ] Mount sdcard");
-    // Initialize peripherals management
-    esp_periph_config_t periph_cfg = { 0, 0 };
-    esp_periph_init(&periph_cfg);
 
-    // Initialize SD Card peripheral
-    periph_sdcard_cfg_t sdcard_cfg = {
-        card_detect_pin : SD_CARD_INTR_GPIO, //GPIO_NUM_34
-        root : "/sdcard",
-    };
-    esp_periph_handle_t sdcard_handle = periph_sdcard_init(&sdcard_cfg);
-    // Start sdcard & button peripheral
-    esp_periph_start(sdcard_handle);
+    int audio_chunksize = AUDIO_CHUNKSIZE;
+    int16_t *buff = (int16_t *)malloc(audio_chunksize * sizeof(short));
 
-    // Wait until sdcard was mounted
-    while (!periph_sdcard_is_mounted(sdcard_handle)) {
-        vTaskDelay(100 / portTICK_PERIOD_MS);
-
+    if (buff == NULL) {
+        return;
     }
 
     ESP_LOGI(TAG, "[ 2 ] Start codec chip");
-    audio_hal_codec_config_t audio_hal_codec_cfg =  AUDIO_HAL_ES8388_DEFAULT();
+    audio_hal_codec_config_t audio_hal_codec_cfg =  AUDIO_HAL_AC101_DEFAULT();
+    audio_hal_codec_cfg.adc_input = AUDIO_HAL_ADC_INPUT_ALL;
     audio_hal_handle_t hal = audio_hal_init(&audio_hal_codec_cfg, BOARD);
-    audio_hal_ctrl_codec(hal, AUDIO_HAL_CODEC_MODE_ENCODE, AUDIO_HAL_CTRL_START);
+    audio_hal_ctrl_codec(hal, AUDIO_HAL_CODEC_MODE_LINE_IN, AUDIO_HAL_CTRL_START);
 
-    ESP_LOGI(TAG, "[3.0] Create audio pipeline for recording");
+
+    audio_pipeline_handle_t pipeline;
+    audio_element_handle_t i2s_stream_reader, filter, raw_read;
+
+
+    ESP_LOGI(TAG, "[2.0] Create audio pipeline for recording");
     audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
     pipeline = audio_pipeline_init(&pipeline_cfg);
     mem_assert(pipeline);
 
-    ESP_LOGI(TAG, "[3.1] Create fatfs stream to write data to sdcard");
-    // fatfs_stream_cfg_t fatfs_cfg = {
-    //     .type = AUDIO_STREAM_WRITER,
-    // };
-    fatfs_stream_cfg_t fatfs_cfg = FATFS_STREAM_CFG_DEFAULT();
-    fatfs_cfg.type = AUDIO_STREAM_WRITER;
-    fatfs_stream_writer = fatfs_stream_init(&fatfs_cfg);
 
-    ESP_LOGI(TAG, "[3.2] Create i2s stream to read audio data from codec chip");
+    ESP_LOGI(EVENT_TAG, "[ 2.1 ] Create i2s stream to read audio data from codec chip");
     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
+    i2s_cfg.i2s_config.sample_rate = 44100;
     i2s_cfg.type = AUDIO_STREAM_READER;
     i2s_stream_reader = i2s_stream_init(&i2s_cfg);
 
-    ESP_LOGI(TAG, "[3.3] Create wav encoder to encode wav format");
-    wav_encoder_cfg_t wav_cfg = DEFAULT_WAV_ENCODER_CONFIG();
-    wav_encoder = wav_encoder_init(&wav_cfg);
 
-    ESP_LOGI(TAG, "[3.4] Register all elements to audio pipeline");
+    ESP_LOGI(EVENT_TAG, "[ 2.2 ] Create filter to resample audio data");
+    rsp_filter_cfg_t rsp_cfg = DEFAULT_RESAMPLE_FILTER_CONFIG();
+    rsp_cfg.src_rate = 44100;
+    rsp_cfg.src_ch = 2;
+    rsp_cfg.dest_rate = 16000;
+    rsp_cfg.dest_ch = 2;
+    rsp_cfg.type = AUDIO_CODEC_TYPE_ENCODER;
+    filter = rsp_filter_init(&rsp_cfg);
+
+
+    ESP_LOGI(EVENT_TAG, "[ 2.3 ] Create raw to receive data");
+    raw_stream_cfg_t raw_cfg = {
+        .type = AUDIO_STREAM_READER,
+        .out_rb_size = 8 * 1024,
+    };
+    raw_read = raw_stream_init(&raw_cfg);
+
+    ESP_LOGI(EVENT_TAG, "[ 3 ] Register all elements to audio pipeline");
     audio_pipeline_register(pipeline, i2s_stream_reader, "i2s");
-    /**
-     * Wav encoder actually passes data without doing anything, which makes the pipeline structure easy to understand.
-     * Because WAV is raw data and audio information is stored in the header,
-     * I2S Stream will write the WAV header after ending the record with enough the information
-     */
-    audio_pipeline_register(pipeline, wav_encoder, "wav");
-    audio_pipeline_register(pipeline, fatfs_stream_writer, "file");
+    audio_pipeline_register(pipeline, filter, "filter");
+    audio_pipeline_register(pipeline, raw_read, "raw");
 
-    ESP_LOGI(TAG, "[3.5] Link it together [codec_chip]-->i2s_stream-->wav_encoder-->fatfs_stream-->[sdcard]");
-    const char *link_tag[] = {"i2s", "wav", "file"};
-    audio_pipeline_link(pipeline, link_tag, 3);
+    ESP_LOGI(EVENT_TAG, "[ 4 ] Link elements together [codec_chip]-->i2s_stream-->filter-->raw");
 
-    ESP_LOGI(TAG, "[3.6] Setup uri (file as fatfs_stream, wav as wav encoder)");
-    audio_element_set_uri(fatfs_stream_writer, "/sdcard/rec.wav");
+    const char* link_array[] = {"i2s", "filter", "raw"};
+    audio_pipeline_link(pipeline, link_array, 3);
 
-
-    ESP_LOGI(TAG, "[ 4 ] Setup event listener");
-    audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
-    audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
-
-    ESP_LOGI(TAG, "[4.1] Listening event from pipeline");
-    audio_pipeline_set_listener(pipeline, evt);
-
-    ESP_LOGI(TAG, "[4.2] Listening event from peripherals");
-    audio_event_iface_set_listener(esp_periph_get_event_iface(), evt);
-
-
-    ESP_LOGI(TAG, "[ 5 ] Start audio_pipeline");
+    ESP_LOGI(EVENT_TAG, "[ 5 ] Start audio_pipeline");
     audio_pipeline_run(pipeline);
 
-    ESP_LOGI(TAG, "[ 6 ] Listen for all pipeline events, record for %d Seconds", RECORD_TIME_SECONDS);
-    int second_recorded = 0;
-    while (1) {
-        audio_event_iface_msg_t msg;
-        if (audio_event_iface_listen(evt, &msg, 1000/portTICK_RATE_MS) != ESP_OK) {
-            second_recorded ++;
-            ESP_LOGI(TAG, "[ * ] Recording ... %d", second_recorded);
-            if (second_recorded >= RECORD_TIME_SECONDS) {
-                break;
-            }
-            continue;
-        }
+    // audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
+    // audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
 
-        /* Stop when the last pipeline element (i2s_stream_reader in this case) receives stop event */
-        if (msg.source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg.source == (void *) i2s_stream_reader
-                && msg.cmd == AEL_MSG_CMD_REPORT_STATUS && (int) msg.data == AEL_STATUS_STATE_STOPPED) {
-            ESP_LOGW(TAG, "[ * ] Stop event received"); 
-            break;
+    while (1) {
+        int i;
+        int bytes_read = raw_stream_read((char *)buff, audio_chunksize * sizeof(short));
+        // printf("%d\n", bytes_read);
+        
+        for (i = 0; i < AUDIO_CHUNKSIZE; i++) {
+            printf("%hi ", buff[i]);
         }
+        vTaskDelay(5);
+        printf("\n");
     }
-    ESP_LOGI(TAG, "[ 7 ] Stop audio_pipeline");
+
+    ESP_LOGI(EVENT_TAG, "[ 6 ] Stop audio_pipeline");
+
     audio_pipeline_terminate(pipeline);
 
-    /* Terminal the pipeline before removing the listener */
+    /* Terminate the pipeline before removing the listener */
     audio_pipeline_remove_listener(pipeline);
 
-    /* Stop all periph before removing the listener */
-    esp_periph_stop_all();
-    audio_event_iface_remove_listener(esp_periph_get_event_iface(), evt);
-
-    /* Make sure audio_pipeline_remove_listener & audio_event_iface_remove_listener are called before destroying event_iface */
-    audio_event_iface_destroy(evt);
+    audio_pipeline_unregister(pipeline, raw_read);
+    audio_pipeline_unregister(pipeline, i2s_stream_reader);
+    audio_pipeline_unregister(pipeline, filter);
 
     /* Release all resources */
     audio_pipeline_deinit(pipeline);
-    audio_element_deinit(fatfs_stream_writer);
+    audio_element_deinit(raw_read);
     audio_element_deinit(i2s_stream_reader);
-    audio_element_deinit(wav_encoder);
-    esp_periph_destroy();
+    audio_element_deinit(filter);
+
+    free(buff);
+    buff = NULL;
 }

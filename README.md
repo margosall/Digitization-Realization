@@ -14,8 +14,8 @@
 ## Todo:
 
 - [x] ESP-IDF/ADF + Arduino 28.09
-- [] ESP-Mic / Line-in Datastream reading
-- [] Reading SD card files
-- [] ESP-DSP <- FIR / FFT  
+- [x] ESP-Mic / Line-in Datastream reading
+- [ ] Reading SD card files
+- [ ] ESP-DSP <- FIR / FFT  
 - TBD...
 

@@ -29,7 +29,7 @@ while True:
 
 
         for value in values:
-            lines.append(str(counter) + "," + value + "\n")
+            lines.append(str(counter) + "," + value)
             counter += 1
 
         with open(script_path + "/data.txt", "w+") as data_file:

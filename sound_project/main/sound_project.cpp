@@ -30,7 +30,7 @@
 
 static const char *TAG = "record_raw";
 
-#define AUDIO_CHUNKSIZE 512
+#define AUDIO_CHUNKSIZE 1024
 
 
 extern "C" void app_main() {
@@ -46,11 +46,10 @@ extern "C" void app_main() {
         int bytes_read = raw_stream_read((char *)soundInput->buffer, AUDIO_CHUNKSIZE * sizeof(short));
         // printf("%d\n", bytes_read);        
         for (i = 0; i < AUDIO_CHUNKSIZE; i++) {
-            Serial.print(soundInput->buffer[i]);
-            Serial.write(' ');
+            printf("%hi ", soundInput->buffer[i]);
         }
         vTaskDelay(5);
-        Serial.write('\n');
+        printf("\n");
     }
 
 
@@ -76,7 +75,7 @@ sound_input_struct_t *setupMic(int sampleRate) {
     audio_hal_codec_config_t audio_hal_codec_cfg =  AUDIO_HAL_AC101_DEFAULT();
     audio_hal_codec_cfg.adc_input = AUDIO_HAL_ADC_INPUT_ALL;
     audio_hal_handle_t hal = audio_hal_init(&audio_hal_codec_cfg, BOARD);
-    audio_hal_ctrl_codec(hal, AUDIO_HAL_CODEC_MODE_ENCODE, AUDIO_HAL_CTRL_START);
+    audio_hal_ctrl_codec(hal, AUDIO_HAL_CODEC_MODE_LINE_IN, AUDIO_HAL_CTRL_START);
 
 
     audio_pipeline_handle_t pipeline;
@@ -99,9 +98,9 @@ sound_input_struct_t *setupMic(int sampleRate) {
     ESP_LOGI(EVENT_TAG, "[ 2.2 ] Create filter to resample audio data");
     rsp_filter_cfg_t rsp_cfg = DEFAULT_RESAMPLE_FILTER_CONFIG();
     rsp_cfg.src_rate = sampleRate;
-    rsp_cfg.src_ch = 1;
+    rsp_cfg.src_ch = 2;
     rsp_cfg.dest_rate = sampleRate;
-    rsp_cfg.dest_ch = 1;
+    rsp_cfg.dest_ch = 2;
     rsp_cfg.type = AUDIO_CODEC_TYPE_ENCODER;
     filter = rsp_filter_init(&rsp_cfg);
 

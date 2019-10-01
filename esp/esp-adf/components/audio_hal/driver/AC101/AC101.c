@@ -240,9 +240,9 @@ esp_err_t AC101_start(ac_module_t mode)
 
 	esp_err_t res = 0;
     if (mode == AC_MODULE_LINE) {
-		res |= AC101_Write_Reg(0x51, 0x0408);
+		res |= AC101_Write_Reg(0x51, 0x0808);
 		res |= AC101_Write_Reg(0x40, 0x8000);
-		res |= AC101_Write_Reg(0x50, 0x3bc0);
+		res |= AC101_Write_Reg(0x50, 0xbbc0);
     }
     if (mode == AC_MODULE_ADC || mode == AC_MODULE_ADC_DAC || mode == AC_MODULE_LINE) {
 		//I2S1_SDOUT_CTRL

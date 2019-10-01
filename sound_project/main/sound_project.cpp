@@ -47,9 +47,10 @@ extern "C" void app_main() {
         // printf("%d\n", bytes_read);        
         for (i = 0; i < AUDIO_CHUNKSIZE; i++) {
             Serial.print(soundInput->buffer[i]);
+            Serial.write(' ');
         }
         vTaskDelay(5);
-        Serial.println();
+        Serial.write('\n');
     }
 
 

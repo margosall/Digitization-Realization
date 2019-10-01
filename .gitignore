@@ -16,3 +16,9 @@ esp/esp-idf/tools/kconfig/lxdialog/textbox.o
 esp/esp-idf/tools/kconfig/lxdialog/util.d
 esp/esp-idf/tools/kconfig/lxdialog/util.o
 esp/esp-idf/tools/kconfig/lxdialog/yesno.d
+esp/esp-idf/tools/kconfig/lxdialog/menubox.o
+esp/esp-idf/tools/kconfig/conf-idf
+esp/esp-idf/tools/kconfig/conf.d
+esp/esp-idf/tools/kconfig/conf.o
+esp/esp-idf/tools/kconfig/mconf-idf
+esp/esp-idf/tools/kconfig/lxdialog/menubox.d

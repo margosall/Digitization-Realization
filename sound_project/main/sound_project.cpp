@@ -35,7 +35,7 @@ static const char *TAG = "record_raw";
 
 extern "C" void app_main() {
     initArduino();
-    Serial.begin(921000);
+    Serial.begin(921600);
     
     sound_input_struct_t *soundInput = setupMic(44100);
 
@@ -46,10 +46,10 @@ extern "C" void app_main() {
         int bytes_read = raw_stream_read((char *)soundInput->buffer, AUDIO_CHUNKSIZE * sizeof(short));
         // printf("%d\n", bytes_read);        
         for (i = 0; i < AUDIO_CHUNKSIZE; i++) {
-            printf("%hi ", soundInput->buffer[i]);
+            Serial.print(soundInput->buffer[i]);
         }
         vTaskDelay(5);
-        printf("\n");
+        Serial.println();
     }
 
 
@@ -98,7 +98,7 @@ sound_input_struct_t *setupMic(int sampleRate) {
     ESP_LOGI(EVENT_TAG, "[ 2.2 ] Create filter to resample audio data");
     rsp_filter_cfg_t rsp_cfg = DEFAULT_RESAMPLE_FILTER_CONFIG();
     rsp_cfg.src_rate = sampleRate;
-    rsp_cfg.src_ch = 2;
+    rsp_cfg.src_ch = 1;
     rsp_cfg.dest_rate = sampleRate;
     rsp_cfg.dest_ch = 1;
     rsp_cfg.type = AUDIO_CODEC_TYPE_ENCODER;

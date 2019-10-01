@@ -37,7 +37,7 @@ extern "C" void app_main() {
     initArduino();
     Serial.begin(921600);
     
-    sound_input_struct_t *soundInput = setupMic(44100);
+    sound_input_struct_t *soundInput = setupMic(41100);
 
     
 
@@ -46,10 +46,12 @@ extern "C" void app_main() {
         int bytes_read = raw_stream_read((char *)soundInput->buffer, AUDIO_CHUNKSIZE * sizeof(short));
         // printf("%d\n", bytes_read);        
         for (i = 0; i < AUDIO_CHUNKSIZE; i++) {
-            printf("%hi ", soundInput->buffer[i]);
+            Serial.print(soundInput->buffer[i]);
+            Serial.print(" ");
+
         }
         vTaskDelay(5);
-        printf("\n");
+        Serial.print("\n");
     }
 
 
@@ -100,7 +102,7 @@ sound_input_struct_t *setupMic(int sampleRate) {
     rsp_cfg.src_rate = sampleRate;
     rsp_cfg.src_ch = 2;
     rsp_cfg.dest_rate = sampleRate;
-    rsp_cfg.dest_ch = 2;
+    rsp_cfg.dest_ch = 1;
     rsp_cfg.type = AUDIO_CODEC_TYPE_ENCODER;
     filter = rsp_filter_init(&rsp_cfg);
 

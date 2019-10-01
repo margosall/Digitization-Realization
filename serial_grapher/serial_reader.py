@@ -24,18 +24,8 @@ while True:
 
         values = [value + "\n" for value in values]
 
-        lines = []
-        counter = 1
-
-
-        for value in values:
-            lines.append(str(counter) + "," + value)
-            counter += 1
-
         with open(script_path + "/data.txt", "w+") as data_file:
-            data_file.writelines(lines)
-        with open(script_path + "/data.py", "w+") as data_file_fft:
-            data_file_fft.writelines(values)
+            data_file.writelines(values)
 
     except KeyboardInterrupt:
         ser.close()

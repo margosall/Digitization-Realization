@@ -4,6 +4,7 @@
         "array": "cpp",
         "string": "cpp",
         "string_view": "cpp",
-        "board.h": "c"
+        "board.h": "c",
+        "limits": "cpp"
     }
 }

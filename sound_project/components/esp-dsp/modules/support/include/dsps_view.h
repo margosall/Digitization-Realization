@@ -40,6 +40,7 @@ extern "C"
  */
 
 void dsps_view(const float *data, int32_t len, int width, int height, float min, float max, char view_char);
+void dsps_view_s16(const int16_t *data, int32_t len, int width, int height, int16_t min, int16_t max, char view_char);
 
 /**
  * @brief   spectrum view

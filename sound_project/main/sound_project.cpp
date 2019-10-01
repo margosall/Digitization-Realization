@@ -20,35 +20,62 @@
 #include "esp_peripherals.h"
 #include "periph_button.h"
 
+#include "sound_project.h"
+
+#include "esp_dsp.h"
+
 #ifdef ARDUINO_ARCH_ESP32
 #include "esp32-hal-log.h"
 #endif
 
 static const char *TAG = "record_raw";
 
-#define AUDIO_CHUNKSIZE 1024
+#define AUDIO_CHUNKSIZE 512
+
 
 extern "C" void app_main() {
     initArduino();
-
     Serial.begin(921000);
+    
+    sound_input_struct_t *soundInput = setupMic(44100);
+
+    
+
+    while (1) {
+        int i;
+        int bytes_read = raw_stream_read((char *)soundInput->buffer, AUDIO_CHUNKSIZE * sizeof(short));
+        // printf("%d\n", bytes_read);        
+        for (i = 0; i < AUDIO_CHUNKSIZE; i++) {
+            printf("%hi ", soundInput->buffer[i]);
+        }
+        vTaskDelay(5);
+        printf("\n");
+    }
+
+
+    cleanUpMic(soundInput);
+
+}
+
+
+
+sound_input_struct_t *setupMic(int sampleRate) {
+
+    sound_input_struct_t *soundInput = (sound_input_struct_t *)malloc(sizeof(sound_input_struct_t));
+    int16_t *buff = (int16_t *)malloc(AUDIO_CHUNKSIZE * sizeof(short));
+    
+    if (buff == NULL) {
+        return NULL;
+    }
 
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set(TAG, ESP_LOG_INFO);
-
-
-    int audio_chunksize = AUDIO_CHUNKSIZE;
-    int16_t *buff = (int16_t *)malloc(audio_chunksize * sizeof(short));
-
-    if (buff == NULL) {
-        return;
-    }
 
     ESP_LOGI(TAG, "[ 2 ] Start codec chip");
     audio_hal_codec_config_t audio_hal_codec_cfg =  AUDIO_HAL_AC101_DEFAULT();
     audio_hal_codec_cfg.adc_input = AUDIO_HAL_ADC_INPUT_ALL;
     audio_hal_handle_t hal = audio_hal_init(&audio_hal_codec_cfg, BOARD);
-    audio_hal_ctrl_codec(hal, AUDIO_HAL_CODEC_MODE_LINE_IN, AUDIO_HAL_CTRL_START);
+    audio_hal_ctrl_codec(hal, AUDIO_HAL_CODEC_MODE_ENCODE, AUDIO_HAL_CTRL_START);
 
 
     audio_pipeline_handle_t pipeline;
@@ -63,17 +90,17 @@ extern "C" void app_main() {
 
     ESP_LOGI(EVENT_TAG, "[ 2.1 ] Create i2s stream to read audio data from codec chip");
     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
-    i2s_cfg.i2s_config.sample_rate = 44100;
+    i2s_cfg.i2s_config.sample_rate = sampleRate;
     i2s_cfg.type = AUDIO_STREAM_READER;
     i2s_stream_reader = i2s_stream_init(&i2s_cfg);
 
 
     ESP_LOGI(EVENT_TAG, "[ 2.2 ] Create filter to resample audio data");
     rsp_filter_cfg_t rsp_cfg = DEFAULT_RESAMPLE_FILTER_CONFIG();
-    rsp_cfg.src_rate = 44100;
+    rsp_cfg.src_rate = sampleRate;
     rsp_cfg.src_ch = 2;
-    rsp_cfg.dest_rate = 16000;
-    rsp_cfg.dest_ch = 2;
+    rsp_cfg.dest_rate = sampleRate;
+    rsp_cfg.dest_ch = 1;
     rsp_cfg.type = AUDIO_CODEC_TYPE_ENCODER;
     filter = rsp_filter_init(&rsp_cfg);
 
@@ -98,38 +125,35 @@ extern "C" void app_main() {
     ESP_LOGI(EVENT_TAG, "[ 5 ] Start audio_pipeline");
     audio_pipeline_run(pipeline);
 
-    // audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
-    // audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
+    soundInput->pipeline = pipeline;
+    soundInput->i2s_stream_reader = i2s_stream_reader;
+    soundInput->filter = filter;
+    soundInput->raw_read = raw_read;
+    soundInput->buffer = buff;
 
-    while (1) {
-        int i;
-        int bytes_read = raw_stream_read((char *)buff, audio_chunksize * sizeof(short));
-        // printf("%d\n", bytes_read);
-        
-        for (i = 0; i < AUDIO_CHUNKSIZE; i++) {
-            printf("%hi ", buff[i]);
-        }
-        vTaskDelay(5);
-        printf("\n");
-    }
+    return soundInput;
+} 
 
+void cleanUpMic(sound_input_struct_t *soundInput) {
     ESP_LOGI(EVENT_TAG, "[ 6 ] Stop audio_pipeline");
 
-    audio_pipeline_terminate(pipeline);
+    audio_pipeline_terminate(soundInput->pipeline);
 
     /* Terminate the pipeline before removing the listener */
-    audio_pipeline_remove_listener(pipeline);
+    audio_pipeline_remove_listener(soundInput->pipeline);
 
-    audio_pipeline_unregister(pipeline, raw_read);
-    audio_pipeline_unregister(pipeline, i2s_stream_reader);
-    audio_pipeline_unregister(pipeline, filter);
+    audio_pipeline_unregister(soundInput->pipeline, soundInput->raw_read);
+    audio_pipeline_unregister(soundInput->pipeline, soundInput->i2s_stream_reader);
+    audio_pipeline_unregister(soundInput->pipeline, soundInput->filter);
 
     /* Release all resources */
-    audio_pipeline_deinit(pipeline);
-    audio_element_deinit(raw_read);
-    audio_element_deinit(i2s_stream_reader);
-    audio_element_deinit(filter);
+    audio_pipeline_deinit(soundInput->pipeline);
+    audio_element_deinit(soundInput->raw_read);
+    audio_element_deinit(soundInput->i2s_stream_reader);
+    audio_element_deinit(soundInput->filter);
 
-    free(buff);
-    buff = NULL;
+    free(soundInput->buffer);
+    soundInput->buffer = NULL;
+    free(soundInput);
+    soundInput = NULL;
 }

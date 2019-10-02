@@ -34,38 +34,56 @@ static const char *TAG = "record_raw";
 
 #define AUDIO_CHUNKSIZE 4096
 
+size_t allocated_size(void * ptr) 
+{
+  return ((size_t*)ptr)[-1];
+}
+
 extern "C" void app_main()
 {
     initArduino();
     Serial.begin(921600);
+    printf("Free Size %u\r\n",heap_caps_get_free_size(MALLOC_CAP_8BIT));
 
-    sound_input_struct_t *soundInput = setupMic(41100);
+    sound_input_struct_t *soundInput = setupMic(44100);
     pinMode(KEY6_PIN, INPUT_PULLUP);
-
-    while (1)
+    
+    // printf("Size of int16 %u\r\n",sizeof(int16_t));
+    // printf("Largest block %u\r\n",heap_caps_get_largest_free_block(MALLOC_CAP_8BIT));
+    // printf("Free Size %u\r\n",heap_caps_get_free_size(MALLOC_CAP_8BIT));
+    // int16_t readTemp;
+    while(1)
     {
-        int i;
-        int bytes_read = raw_stream_read((char *)soundInput->buffer, AUDIO_CHUNKSIZE * sizeof(short));
-        // printf("%d\n", bytes_read);
+        // printf("Size %u\r\n",allocated_size(soundInput->buffer));
+
+        // printf("WHILE_BEGIN\r\n");
+        // printf("Bytes read %d\n", bytes_read);
+        // printf("%p ,%hi\r\n",&(soundInput->buffer[0]),soundInput->buffer[0]);
+        // printf("Size after %u\r\n",allocated_size(soundInput->buffer));
         while(digitalRead(KEY6_PIN))
         {
             vTaskDelay(5);
         }
+        int bytes_read = raw_stream_read((char *)soundInput->buffer, AUDIO_CHUNKSIZE * sizeof(int16_t));
 
-        for (i = 0; i < AUDIO_CHUNKSIZE; i++)
+        for (uint32_t i = 0; i < (AUDIO_CHUNKSIZE>>1) ; i++)
         {
-            Serial.print(soundInput->buffer[i]);
-            Serial.print(" ");
-
+            // Serial.print(i);
+            // Serial.write(' ');
+            // Serial.println(soundInput->buffer[i]);
+            // Serial.print();
+            // Serial.print(" ");
+            // readTemp=soundInput->buffer[i];
+            // printf("%p ,%hi\r\n",&(soundInput->buffer[i]),soundInput->buffer[i]);
+            printf("%hi ",soundInput->buffer[i]);
         }
-        Serial.print("\n");
-
+        // Serial.print("\n");
+        printf("\n");
         while(!digitalRead(KEY6_PIN))
         {
             vTaskDelay(5);
         }
-
-        vTaskDelay(100);
+        vTaskDelay(1);
     }
 
     cleanUpMic(soundInput);
@@ -75,7 +93,7 @@ sound_input_struct_t *setupMic(int sampleRate)
 {
 
     sound_input_struct_t *soundInput = (sound_input_struct_t *)malloc(sizeof(sound_input_struct_t));
-    int16_t *buff = (int16_t *)malloc(AUDIO_CHUNKSIZE * sizeof(short));
+    int16_t *buff = (int16_t *)calloc(AUDIO_CHUNKSIZE,sizeof(int16_t));
 
     if (buff == NULL)
     {
@@ -117,7 +135,7 @@ sound_input_struct_t *setupMic(int sampleRate)
     ESP_LOGI(EVENT_TAG, "[ 2.3 ] Create raw to receive data");
     raw_stream_cfg_t raw_cfg = {
         .type = AUDIO_STREAM_READER,
-        .out_rb_size = 8 * 1024,
+        .out_rb_size = AUDIO_CHUNKSIZE,
     };
     raw_read = raw_stream_init(&raw_cfg);
 

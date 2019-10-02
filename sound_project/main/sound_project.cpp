@@ -24,6 +24,8 @@
 
 #include "esp_dsp.h"
 
+#include "buttonPins.h"
+
 #ifdef ARDUINO_ARCH_ESP32
 #include "esp32-hal-log.h"
 #endif
@@ -32,45 +34,49 @@ static const char *TAG = "record_raw";
 
 #define AUDIO_CHUNKSIZE 4096
 
-
-extern "C" void app_main() {
+extern "C" void app_main()
+{
     initArduino();
     Serial.begin(921600);
-    
+
     sound_input_struct_t *soundInput = setupMic(41100);
+    pinMode(KEY6_PIN, INPUT_PULLUP);
 
-    
-
-    while (1) {
+    while (1)
+    {
         int i;
         int bytes_read = raw_stream_read((char *)soundInput->buffer, AUDIO_CHUNKSIZE * sizeof(short));
-        // printf("%d\n", bytes_read);        
-        for (i = 0; i < AUDIO_CHUNKSIZE; i++) {
-            Serial.print(soundInput->buffer[i]);
-            Serial.print(" ");
-        //     Serial.write(soundInput->buffer[i]);
-        //     Serial.write(0xAA);
-        //     if (soundInput->buffer[i] == 0xAA) {
-        //         Serial.write(0xAA);
-        //     }
-        // }
-        vTaskDelay(5);
+        // printf("%d\n", bytes_read);
+        while(digitalRead(KEY6_PIN))
+        {
+            vTaskDelay(5);
+        }
+
+        for (i = 0; i < AUDIO_CHUNKSIZE; i++)
+        {
+            printf("%hd ", soundInput->buffer[i]);
+        }
+
+        while(!digitalRead(KEY6_PIN))
+        {
+            vTaskDelay(5);
+        }
+
+        vTaskDelay(100);
         Serial.print("\n");
     }
 
-
     cleanUpMic(soundInput);
-
 }
 
-
-
-sound_input_struct_t *setupMic(int sampleRate) {
+sound_input_struct_t *setupMic(int sampleRate)
+{
 
     sound_input_struct_t *soundInput = (sound_input_struct_t *)malloc(sizeof(sound_input_struct_t));
     int16_t *buff = (int16_t *)malloc(AUDIO_CHUNKSIZE * sizeof(short));
-    
-    if (buff == NULL) {
+
+    if (buff == NULL)
+    {
         return NULL;
     }
 
@@ -78,28 +84,24 @@ sound_input_struct_t *setupMic(int sampleRate) {
     esp_log_level_set(TAG, ESP_LOG_INFO);
 
     ESP_LOGI(TAG, "[ 2 ] Start codec chip");
-    audio_hal_codec_config_t audio_hal_codec_cfg =  AUDIO_HAL_AC101_DEFAULT();
+    audio_hal_codec_config_t audio_hal_codec_cfg = AUDIO_HAL_AC101_DEFAULT();
     audio_hal_codec_cfg.adc_input = AUDIO_HAL_ADC_INPUT_ALL;
     audio_hal_handle_t hal = audio_hal_init(&audio_hal_codec_cfg, BOARD);
     audio_hal_ctrl_codec(hal, AUDIO_HAL_CODEC_MODE_LINE_IN, AUDIO_HAL_CTRL_START);
 
-
     audio_pipeline_handle_t pipeline;
     audio_element_handle_t i2s_stream_reader, filter, raw_read;
-
 
     ESP_LOGI(TAG, "[2.0] Create audio pipeline for recording");
     audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
     pipeline = audio_pipeline_init(&pipeline_cfg);
     mem_assert(pipeline);
 
-
     ESP_LOGI(EVENT_TAG, "[ 2.1 ] Create i2s stream to read audio data from codec chip");
     i2s_stream_cfg_t i2s_cfg = I2S_STREAM_CFG_DEFAULT();
     i2s_cfg.i2s_config.sample_rate = sampleRate;
     i2s_cfg.type = AUDIO_STREAM_READER;
     i2s_stream_reader = i2s_stream_init(&i2s_cfg);
-
 
     ESP_LOGI(EVENT_TAG, "[ 2.2 ] Create filter to resample audio data");
     rsp_filter_cfg_t rsp_cfg = DEFAULT_RESAMPLE_FILTER_CONFIG();
@@ -109,7 +111,6 @@ sound_input_struct_t *setupMic(int sampleRate) {
     rsp_cfg.dest_ch = 1;
     rsp_cfg.type = AUDIO_CODEC_TYPE_ENCODER;
     filter = rsp_filter_init(&rsp_cfg);
-
 
     ESP_LOGI(EVENT_TAG, "[ 2.3 ] Create raw to receive data");
     raw_stream_cfg_t raw_cfg = {
@@ -125,7 +126,7 @@ sound_input_struct_t *setupMic(int sampleRate) {
 
     ESP_LOGI(EVENT_TAG, "[ 4 ] Link elements together [codec_chip]-->i2s_stream-->filter-->raw");
 
-    const char* link_array[] = {"i2s", "filter", "raw"};
+    const char *link_array[] = {"i2s", "filter", "raw"};
     audio_pipeline_link(pipeline, link_array, 3);
 
     ESP_LOGI(EVENT_TAG, "[ 5 ] Start audio_pipeline");
@@ -138,9 +139,10 @@ sound_input_struct_t *setupMic(int sampleRate) {
     soundInput->buffer = buff;
 
     return soundInput;
-} 
+}
 
-void cleanUpMic(sound_input_struct_t *soundInput) {
+void cleanUpMic(sound_input_struct_t *soundInput)
+{
     ESP_LOGI(EVENT_TAG, "[ 6 ] Stop audio_pipeline");
 
     audio_pipeline_terminate(soundInput->pipeline);

@@ -54,7 +54,9 @@ extern "C" void app_main()
 
         for (i = 0; i < AUDIO_CHUNKSIZE; i++)
         {
-            printf("%hd ", soundInput->buffer[i]);
+            Serial.print(soundInput->buffer[i]);
+            Serial.print(" ");
+
         }
 
         while(!digitalRead(KEY6_PIN))

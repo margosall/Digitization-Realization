@@ -16,7 +16,7 @@ ax2 = fig.add_subplot(2,1,2)
 
 chans = 1 # 1 channel
 samp_rate = 44100 # 44.1kHz sampling rate
-chunk = 1024 # 2^12 samples for buffer
+chunk = 4096 # 2^12 samples for buffer
 f_vec = samp_rate*np.arange(chunk/2)/chunk
 
 

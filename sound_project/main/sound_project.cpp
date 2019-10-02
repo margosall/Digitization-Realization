@@ -30,7 +30,7 @@
 
 static const char *TAG = "record_raw";
 
-#define AUDIO_CHUNKSIZE 1024
+#define AUDIO_CHUNKSIZE 4096
 
 
 extern "C" void app_main() {
@@ -48,8 +48,12 @@ extern "C" void app_main() {
         for (i = 0; i < AUDIO_CHUNKSIZE; i++) {
             Serial.print(soundInput->buffer[i]);
             Serial.print(" ");
-
-        }
+        //     Serial.write(soundInput->buffer[i]);
+        //     Serial.write(0xAA);
+        //     if (soundInput->buffer[i] == 0xAA) {
+        //         Serial.write(0xAA);
+        //     }
+        // }
         vTaskDelay(5);
         Serial.print("\n");
     }

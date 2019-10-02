@@ -22,3 +22,4 @@ esp/esp-idf/tools/kconfig/conf.d
 esp/esp-idf/tools/kconfig/conf.o
 esp/esp-idf/tools/kconfig/mconf-idf
 esp/esp-idf/tools/kconfig/lxdialog/menubox.d
+serial_grapher/data.txt

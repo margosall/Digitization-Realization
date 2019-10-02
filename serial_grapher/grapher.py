@@ -12,12 +12,13 @@ script_path =  os.path.dirname(os.path.realpath(__file__))
 process = Popen(['python3', 'serial_reader.py'], stdout=PIPE, stderr=PIPE)
 
 fig = plt.figure()
-ax1 = fig.add_subplot(2,1,1)
-ax2 = fig.add_subplot(2,1,2)
+ax1 = fig.add_subplot(3,1,1)
+ax2 = fig.add_subplot(3,1,3)
 
 chans = 1 # 1 channel
 samp_rate = 44100 # 44.1kHz sampling rate
-chunk = 4096 # 2^12 samples for buffer
+period = 1/samp_rate
+chunk = 2048 # 2^12 samples for buffer
 f_vec = samp_rate*np.arange(chunk/2)/chunk
 
 last_modified = [os.path.getmtime(script_path + '/data.txt')]
@@ -40,6 +41,8 @@ def animate(i, last_modified):
             ax2.clear()
             ax1.set_ylim(-32768, 32767)
             ax1.plot(ys)
+            ax1.set_xticklabels(np.around(np.linspace(0, chunk*period*1000, num=6),3))
+            ax1.set(xlabel="t [ms]")
 
             fft_data = (np.abs(np.fft.fft(ys))[0:int(np.floor(chunk/2))])/chunk
             fft_data[1:] = 2*fft_data[1:]

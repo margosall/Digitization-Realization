@@ -58,6 +58,7 @@ extern "C" void app_main()
             Serial.print(" ");
 
         }
+        Serial.print("\n");
 
         while(!digitalRead(KEY6_PIN))
         {
@@ -65,7 +66,6 @@ extern "C" void app_main()
         }
 
         vTaskDelay(100);
-        Serial.print("\n");
     }
 
     cleanUpMic(soundInput);

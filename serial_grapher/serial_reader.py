@@ -19,7 +19,7 @@ while True:
 
             values = [value + "\n" for value in values]
 
-            with open(script_path + "/data.txt", "w+") as data_file:
+            with open(script_path + "/data.txt", "w") as data_file:
                 data_file.writelines(values)
 
         except KeyboardInterrupt:

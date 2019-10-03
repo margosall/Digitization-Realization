@@ -36,6 +36,7 @@ ax1.set(xlabel="t [ms]")
 
 # Plot two settings
 
+
 ax2.set(xlabel='Frequency [Hz]')
 # plt.ylabel('Amplitude [Pa]')
 ax2.set_xscale('log')
@@ -66,6 +67,8 @@ def animate(i, last_modified):
             # Calc FFT
             fft_data = (np.abs(np.fft.fft(ys))[0:int(np.floor(chunk/2))])/chunk
             fft_data[1:] = 2*fft_data[1:]
+
+            ax2.set_ylim(0, np.max(fft_data))
 
             # Draw 
             ax1.plot(ys, color='b')

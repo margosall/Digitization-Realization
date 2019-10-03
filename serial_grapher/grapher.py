@@ -36,7 +36,6 @@ ax1.set(xlabel="t [ms]")
 
 # Plot two settings
 
-ax2.set_ylim(0, 32726)
 ax2.set(xlabel='Frequency [Hz]')
 # plt.ylabel('Amplitude [Pa]')
 ax2.set_xscale('log')

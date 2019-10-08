@@ -1,0 +1,10 @@
+1-2. Planning/ordering
+3-4. IDF/ADF integration
+5-6. Hardware testing, encoder + python
+7-8. Debugger, recording bugs, fingerprints, normalization
+9-10. Samples from storage, filtering
+11-12. Phase matching, correlation?
+13-14. Expanding lib and samples
+15-16. Testing and final prep
+
+Specials: Sound direction/range detection

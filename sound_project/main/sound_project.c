@@ -31,6 +31,8 @@
 
 #include "sound_project.h"
 
+#include "esp_dsp.h"
+
 static const char *TAG = "sound_project";
 static const char *EVENT_TAG = "board";
 

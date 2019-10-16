@@ -9,7 +9,7 @@ def clean_path():
     return ":".join(path)
 
 to_search = ('#Espressif toolchain + IDF/ADF Paths', 'export PATH=', 'export IDF_PATH=', 'export ADF_PATH=', 'export DSPLIB_PATH=')
-directories = ('Filler', '/esp/xtensa-esp32-elf/bin', '/esp/esp-idf', '/esp/esp-adf', '/esp/esp-dsp/modules')
+directories = ('Filler', '/esp/xtensa-esp32-elf/bin', '/esp/esp-idf', '/esp/esp-adf', '/esp/esp-dsp/')
 
 with open(os.path.join((os.path.expanduser('~')), '.bashrc'), 'r') as bashrc_file:
    bashrc = bashrc_file.readlines()

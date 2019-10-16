@@ -22,12 +22,13 @@
  *
  ******************************************************************************/
 
-#include "bt_target.h"
+#include "common/bt_target.h"
 #if defined(BTA_AV_INCLUDED) && (BTA_AV_INCLUDED == TRUE)
 
 #include <string.h>
-#include "bta_av_co.h"
+#include "bta/bta_av_co.h"
 #include "bta_av_int.h"
+#include "osi/osi.h"
 
 /*****************************************************************************
 ** Constants and types
@@ -94,6 +95,7 @@ enum {
     BTA_AV_ROLE_RES,
     BTA_AV_DELAY_CO,
     BTA_AV_OPEN_AT_INC,
+    BTA_AV_OPEN_FAIL_SDP,
     BTA_AV_NUM_SACTIONS
 };
 
@@ -199,7 +201,7 @@ static const UINT8 bta_av_sst_opening[][BTA_AV_NUM_COLS] = {
     /* CI_SETCONFIG_OK_EVT */   {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_OPENING_SST },
     /* CI_SETCONFIG_FAIL_EVT */ {BTA_AV_SIGNORE,        BTA_AV_SIGNORE,        BTA_AV_OPENING_SST },
     /* SDP_DISC_OK_EVT */       {BTA_AV_CONNECT_REQ,    BTA_AV_SIGNORE,        BTA_AV_OPENING_SST },
-    /* SDP_DISC_FAIL_EVT */     {BTA_AV_CONNECT_REQ,    BTA_AV_SIGNORE,        BTA_AV_OPENING_SST },
+    /* SDP_DISC_FAIL_EVT */     {BTA_AV_FREE_SDB,       BTA_AV_OPEN_FAIL_SDP,  BTA_AV_INIT_SST },
     /* STR_DISC_OK_EVT */       {BTA_AV_DISC_RESULTS,   BTA_AV_SIGNORE,        BTA_AV_OPENING_SST },
     /* STR_DISC_FAIL_EVT */     {BTA_AV_OPEN_FAILED,    BTA_AV_SIGNORE,        BTA_AV_CLOSING_SST },
     /* STR_GETCAP_OK_EVT */     {BTA_AV_GETCAP_RESULTS, BTA_AV_SIGNORE,        BTA_AV_OPENING_SST },
@@ -563,7 +565,7 @@ void bta_av_set_scb_sst_incoming (tBTA_AV_SCB *p_scb)
 ** Returns          char *
 **
 *******************************************************************************/
-static char *bta_av_sst_code(UINT8 state)
+UNUSED_ATTR static char *bta_av_sst_code(UINT8 state)
 {
     switch (state) {
     case BTA_AV_INIT_SST: return "INIT";

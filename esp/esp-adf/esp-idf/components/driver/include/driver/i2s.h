@@ -138,7 +138,9 @@ typedef struct {
     int                     intr_alloc_flags;       /*!< Flags used to allocate the interrupt. One or multiple (ORred) ESP_INTR_FLAG_* values. See esp_intr_alloc.h for more info */
     int                     dma_buf_count;          /*!< I2S DMA Buffer Count */
     int                     dma_buf_len;            /*!< I2S DMA Buffer Length */
-    int                     use_apll;               /*!< I2S using APLL as main I2S clock, enable it to get accurate clock */
+    bool                    use_apll;              /*!< I2S using APLL as main I2S clock, enable it to get accurate clock */
+    bool                    tx_desc_auto_clear;     /*!< I2S auto clear tx descriptor if there is underflow condition (helps in avoiding noise in case of data unavailability) */
+    int                     fixed_mclk;             /*!< I2S using fixed MCLK output. If use_apll = true and fixed_mclk > 0, then the clock output for i2s is fixed and equal to the fixed_mclk value.*/
 } i2s_config_t;
 
 /**
@@ -353,8 +355,6 @@ int i2s_read_bytes(i2s_port_t i2s_num, void *dest, size_t size, TickType_t ticks
  *
  * @note If the built-in ADC mode is enabled, we should call i2s_adc_start and i2s_adc_stop around the whole reading process,
  *       to prevent the data getting corrupted.
- * @note If the built-in ADC mode is enabled, we should call i2s_adc_start and i2s_adc_stop around the whole reading process,
- *       to prevent the data getting corrupted.
  *
  * @return
  *     - ESP_OK               Success
@@ -479,7 +479,7 @@ esp_err_t i2s_set_clk(i2s_port_t i2s_num, uint32_t rate, i2s_bits_per_sample_t b
 /**
  * @brief Set built-in ADC mode for I2S DMA, this function will initialize ADC pad,
  *        and set ADC parameters.
- * @param adc_unit  SAR ADC unit index
+ * @param adc_unit    SAR ADC unit index
  * @param adc_channel ADC channel index
  * @return
  *     - ESP_OK              Success
@@ -494,10 +494,9 @@ esp_err_t i2s_set_adc_mode(adc_unit_t adc_unit, adc1_channel_t adc_channel);
  *
  * @param i2s_num i2s port index
  * @return
- *     - ESP_OK Success
- *     - ESP_ERR_INVALID_ARG Parameter error
- *     - ESP_ERR_INVALID_STATE driver state error
- *     - ESP_FAIL Internal driver error
+ *     - ESP_OK                Success
+ *     - ESP_ERR_INVALID_ARG   Parameter error
+ *     - ESP_ERR_INVALID_STATE Driver state error
  */
 esp_err_t i2s_adc_enable(i2s_port_t i2s_num);
 
@@ -506,9 +505,9 @@ esp_err_t i2s_adc_enable(i2s_port_t i2s_num);
  * @param i2s_num i2s port index
  * @note This function would release the lock of ADC so that other tasks can use ADC.
  * @return
- *     - ESP_OK Success
- *     - ESP_ERR_INVALID_ARG Parameter error
- *     - ESP_ERR_INVALID_STATE driver state error
+ *     - ESP_OK                 Success
+ *     - ESP_ERR_INVALID_ARG    Parameter error
+ *     - ESP_ERR_INVALID_STATE  Driver state error
  */
 esp_err_t i2s_adc_disable(i2s_port_t i2s_num);
 

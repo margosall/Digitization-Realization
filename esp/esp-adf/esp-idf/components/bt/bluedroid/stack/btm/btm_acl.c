@@ -36,15 +36,15 @@
 //#include <stdio.h>
 #include <stddef.h>
 
-#include "bt_types.h"
-#include "bt_target.h"
-#include "controller.h"
-#include "hcimsgs.h"
-#include "btu.h"
-#include "btm_api.h"
+#include "stack/bt_types.h"
+#include "common/bt_target.h"
+#include "device/controller.h"
+#include "stack/hcimsgs.h"
+#include "stack/btu.h"
+#include "stack/btm_api.h"
 #include "btm_int.h"
 #include "l2c_int.h"
-#include "hcidefs.h"
+#include "stack/hcidefs.h"
 //#include "bt_utils.h"
 
 static void btm_read_remote_features (UINT16 handle);
@@ -261,9 +261,10 @@ void btm_acl_created (BD_ADDR bda, DEV_CLASS dc, BD_NAME bdn,
 #if BLE_INCLUDED == TRUE
             p->transport = transport;
 #if BLE_PRIVACY_SPT == TRUE
-            if (transport == BT_TRANSPORT_LE)
+            if (transport == BT_TRANSPORT_LE) {
                 btm_ble_refresh_local_resolvable_private_addr(bda,
                         btm_cb.ble_ctr_cb.addr_mgnt_cb.private_addr);
+            }
 #else
             p->conn_addr_type = BLE_ADDR_PUBLIC;
             memcpy(p->conn_addr, &controller_get_interface()->get_address()->address, BD_ADDR_LEN);
@@ -335,7 +336,7 @@ void btm_acl_created (BD_ADDR bda, DEV_CLASS dc, BD_NAME bdn,
                     btsnd_hcic_ble_read_remote_feat(p->hci_handle);
                 } else if (HCI_LE_SLAVE_INIT_FEAT_EXC_SUPPORTED(controller_get_interface()->get_features_ble()->as_array)
                          && link_role == HCI_ROLE_SLAVE) {
-                    btsnd_hcic_ble_read_remote_feat(p->hci_handle);
+                    btsnd_hcic_rmt_ver_req (p->hci_handle);
                 } else {
                     btm_establish_continue(p);
                 }
@@ -906,12 +907,17 @@ void btm_read_remote_version_complete (UINT8 *p)
             }
 #if BLE_INCLUDED == TRUE
             if (p_acl_cb->transport == BT_TRANSPORT_LE) {
-                if (HCI_LE_DATA_LEN_EXT_SUPPORTED(p_acl_cb->peer_le_features)) {
-                    uint16_t data_length = controller_get_interface()->get_ble_default_data_packet_length();
-                    uint16_t data_txtime = controller_get_interface()->get_ble_default_data_packet_txtime();
-                    btsnd_hcic_ble_set_data_length(p_acl_cb->hci_handle, data_length, data_txtime);
+                if(p_acl_cb->link_role == HCI_ROLE_MASTER) {
+                    if (HCI_LE_DATA_LEN_EXT_SUPPORTED(p_acl_cb->peer_le_features)) {
+                        uint16_t data_length = controller_get_interface()->get_ble_default_data_packet_length();
+                        uint16_t data_txtime = controller_get_interface()->get_ble_default_data_packet_txtime();
+                        btsnd_hcic_ble_set_data_length(p_acl_cb->hci_handle, data_length, data_txtime);
+                    }
+                    l2cble_notify_le_connection (p_acl_cb->remote_addr);
+                } else {
+                     //slave role, read remote feature
+                     btsnd_hcic_ble_read_remote_feat(p_acl_cb->hci_handle);
                 }
-                l2cble_notify_le_connection (p_acl_cb->remote_addr);
             }
 #endif
             break;
@@ -1517,11 +1523,10 @@ UINT8 BTM_AllocateSCN(void)
 {
     UINT8   x;
     BTM_TRACE_DEBUG ("BTM_AllocateSCN\n");
-    // stack reserves scn 1 for HFP, HSP we still do the correct way
     for (x = 1; x < BTM_MAX_SCN; x++) {
-        if (!btm_cb.btm_scn[x]) {
-            btm_cb.btm_scn[x] = TRUE;
-            return (x + 1);
+        if (!btm_cb.btm_scn[x - 1]) {
+            btm_cb.btm_scn[x - 1] = TRUE;
+            return x;
         }
     }
     return (0);    /* No free ports */
@@ -1540,10 +1545,7 @@ UINT8 BTM_AllocateSCN(void)
 #if (CLASSIC_BT_INCLUDED == TRUE)
 BOOLEAN BTM_TryAllocateSCN(UINT8 scn)
 {
-    /* Make sure we don't exceed max port range.
-     * Stack reserves scn 1 for HFP, HSP we still do the correct way.
-     */
-    if ( (scn >= BTM_MAX_SCN) || (scn == 1) ) {
+    if (scn >= BTM_MAX_SCN) {
         return FALSE;
     }
 
@@ -1900,14 +1902,10 @@ void btm_qos_setup_complete (UINT8 status, UINT16 handle, FLOW_SPEC *p_flow)
 ** Returns          BTM_CMD_STARTED if successfully initiated or error code
 **
 *******************************************************************************/
-tBTM_STATUS BTM_ReadRSSI (BD_ADDR remote_bda, tBTM_CMPL_CB *p_cb)
+tBTM_STATUS BTM_ReadRSSI (BD_ADDR remote_bda, tBT_TRANSPORT transport, tBTM_CMPL_CB *p_cb)
 {
     tACL_CONN   *p;
-    tBT_TRANSPORT transport = BT_TRANSPORT_BR_EDR;
-#if BLE_INCLUDED == TRUE
-    tBT_DEVICE_TYPE dev_type;
-    tBLE_ADDR_TYPE  addr_type;
-#endif
+
     BTM_TRACE_API ("BTM_ReadRSSI: RemBdAddr: %02x%02x%02x%02x%02x%02x\n",
                    remote_bda[0], remote_bda[1], remote_bda[2],
                    remote_bda[3], remote_bda[4], remote_bda[5]);
@@ -1918,13 +1916,6 @@ tBTM_STATUS BTM_ReadRSSI (BD_ADDR remote_bda, tBTM_CMPL_CB *p_cb)
         (*p_cb)(&result);
         return (BTM_BUSY);
     }
-
-#if BLE_INCLUDED == TRUE
-    BTM_ReadDevInfo(remote_bda, &dev_type, &addr_type);
-    if (dev_type == BT_DEVICE_TYPE_BLE) {
-        transport = BT_TRANSPORT_LE;
-    }
-#endif
 
     p = btm_bda_to_acl(remote_bda, transport);
     if (p != (tACL_CONN *)NULL) {
@@ -2505,15 +2496,17 @@ void btm_acl_chk_peer_pkt_type_support (tACL_CONN *p, UINT16 *p_pkt_type)
     }
 
     /* 2 and 3 MPS support? */
-    if (!HCI_EDR_ACL_2MPS_SUPPORTED(p->peer_lmp_features[HCI_EXT_FEATURES_PAGE_0]))
+    if (!HCI_EDR_ACL_2MPS_SUPPORTED(p->peer_lmp_features[HCI_EXT_FEATURES_PAGE_0])) {
         /* Not supported. Add 'not_supported' mask for all 2MPS packet types */
         *p_pkt_type |= (BTM_ACL_PKT_TYPES_MASK_NO_2_DH1 + BTM_ACL_PKT_TYPES_MASK_NO_2_DH3 +
                         BTM_ACL_PKT_TYPES_MASK_NO_2_DH5);
+    }
 
-    if (!HCI_EDR_ACL_3MPS_SUPPORTED(p->peer_lmp_features[HCI_EXT_FEATURES_PAGE_0]))
+    if (!HCI_EDR_ACL_3MPS_SUPPORTED(p->peer_lmp_features[HCI_EXT_FEATURES_PAGE_0])) {
         /* Not supported. Add 'not_supported' mask for all 3MPS packet types */
         *p_pkt_type |= (BTM_ACL_PKT_TYPES_MASK_NO_3_DH1 + BTM_ACL_PKT_TYPES_MASK_NO_3_DH3 +
                         BTM_ACL_PKT_TYPES_MASK_NO_3_DH5);
+    }
 
     /* EDR 3 and 5 slot support? */
     if (HCI_EDR_ACL_2MPS_SUPPORTED(p->peer_lmp_features[HCI_EXT_FEATURES_PAGE_0])

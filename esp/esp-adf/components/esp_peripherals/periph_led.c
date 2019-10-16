@@ -36,13 +36,13 @@
 #include "soc/sens_reg.h"
 #include "esp_log.h"
 #include "esp_system.h"
-
+#include "audio_mem.h"
 #include "periph_led.h"
 #include "esp_peripherals.h"
 
 #define MAX_LED_CHANNEL (8)
 
-static const char* TAG = "PERIPH_LED";
+static const char *TAG = "PERIPH_LED";
 
 #define VALIDATE_LED(periph, ret) if (!(periph && esp_periph_get_id(periph) == PERIPH_ID_LED)) { \
     ESP_LOGE(TAG, "Invalid LED periph, at line %d", __LINE__);\
@@ -70,16 +70,13 @@ typedef struct periph_led {
 
 static esp_err_t _led_run(esp_periph_handle_t self, audio_event_iface_msg_t *msg)
 {
-
     return ESP_OK;
 }
-
 
 static esp_err_t _led_init(esp_periph_handle_t self)
 {
     VALIDATE_LED(self, ESP_FAIL);
     periph_led_t *periph_led = esp_periph_get_data(self);
-
     ledc_timer_config_t ledc_timer = {
         .duty_resolution = periph_led->led_duty_resolution, // resolution of PWM duty
         .freq_hz = periph_led->led_freq_hz,                      // frequency of PWM signal
@@ -89,7 +86,6 @@ static esp_err_t _led_init(esp_periph_handle_t self)
 
     // Set configuration of timer0 for high speed channels
     ledc_timer_config(&ledc_timer);
-
     ledc_fade_func_install(0);
     return ESP_OK;
 }
@@ -109,11 +105,11 @@ static esp_err_t _led_destroy(esp_periph_handle_t self)
     return ESP_OK;
 }
 
-esp_periph_handle_t periph_led_init(periph_led_cfg_t* config)
+esp_periph_handle_t periph_led_init(periph_led_cfg_t *config)
 {
     esp_periph_handle_t periph = esp_periph_create(PERIPH_ID_LED, "periph_led");
     //check periph
-    periph_led_t *periph_led = calloc(1, sizeof(periph_led_t));
+    periph_led_t *periph_led = audio_calloc(1, sizeof(periph_led_t));
     //check periph_led
     periph_led->led_speed_mode      = config->led_speed_mode;
     periph_led->led_duty_resolution = config->led_duty_resolution;
@@ -142,9 +138,7 @@ static periph_led_channel_t *_find_led_channel(periph_led_t *periph_led, int gpi
         }
     }
     return ch;
-
 }
-
 
 static void led_timer_handler(xTimerHandle tmr)
 {
@@ -159,8 +153,8 @@ static void led_timer_handler(xTimerHandle tmr)
 
         if (ch->loop == 0) {
             ledc_stop(periph_led->led_speed_mode, ch->index, 0);
-            esp_periph_send_event(periph, PERIPH_LED_BLINK_FINISH, (void*)ch->pin, 0);
-            ch->pin = -1; //disable this channel
+            esp_periph_send_event(periph, PERIPH_LED_BLINK_FINISH, (void *)ch->pin, 0);
+            ch->pin = -1; // disable this channel
             continue;
         }
 
@@ -176,7 +170,9 @@ static void led_timer_handler(xTimerHandle tmr)
                 ledc_set_duty(periph_led->led_speed_mode, ch->index, pow(2, periph_led->led_duty_resolution) - 1);
                 ledc_update_duty(periph_led->led_speed_mode, ch->index);
             }
-            ch->is_off = false;
+            if (ch->time_off_ms > 0) {
+                ch->is_off = false;
+            }
             ch->tick = esp_periph_tick_get();
         } else if (!ch->is_off && esp_periph_tick_get() - ch->tick > ch->time_on_ms) {
             if (ch->loop > 0) {
@@ -190,11 +186,11 @@ static void led_timer_handler(xTimerHandle tmr)
                 ledc_set_duty(periph_led->led_speed_mode, ch->index, 0);
                 ledc_update_duty(periph_led->led_speed_mode, ch->index);
             }
-
-            ch->is_off = true;
+            if (ch->time_on_ms > 0) {
+                ch->is_off = true;
+            }
             ch->tick = esp_periph_tick_get();
         }
-
     }
 }
 
@@ -219,7 +215,8 @@ esp_err_t periph_led_blink(esp_periph_handle_t periph, int gpio_num, int time_on
     ch->time_off_ms = time_off_ms;
     ch->loop = loop;
     ch->fade = fade;
-    esp_periph_start_timer(periph, 1 / portTICK_RATE_MS, led_timer_handler);
+    ch->is_off = true;
+    esp_periph_start_timer(periph, portTICK_RATE_MS, led_timer_handler);
     return ESP_OK;
 }
 

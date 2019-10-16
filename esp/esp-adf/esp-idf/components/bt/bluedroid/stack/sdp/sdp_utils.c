@@ -25,20 +25,20 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "allocator.h"
+#include "osi/allocator.h"
 
-#include "bt_defs.h"
+#include "common/bt_defs.h"
 
-#include "bt_types.h"
+#include "stack/bt_types.h"
 
-#include "l2cdefs.h"
-#include "hcidefs.h"
-#include "hcimsgs.h"
+#include "stack/l2cdefs.h"
+#include "stack/hcidefs.h"
+#include "stack/hcimsgs.h"
 
-#include "sdp_api.h"
+#include "stack/sdp_api.h"
 #include "sdpint.h"
 
-#include "btu.h"
+#include "stack/btu.h"
 
 #if (SDP_INCLUDED == TRUE)
 static const UINT8  sdp_base_uuid[] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00,
@@ -242,6 +242,7 @@ UINT8 *sdpu_build_attrib_entry (UINT8 *p_out, tSDP_ATTRIBUTE *p_attr)
         } else
 
 #endif /* 0xFFFF - 0xFF */
+        {
 #if (SDP_MAX_ATTR_LEN > 0xFF)
             if (p_attr->len > 0xFF) {
                 UINT8_TO_BE_STREAM (p_out, (p_attr->type << 3) | SIZE_IN_NEXT_WORD);
@@ -253,7 +254,7 @@ UINT8 *sdpu_build_attrib_entry (UINT8 *p_out, tSDP_ATTRIBUTE *p_attr)
                 UINT8_TO_BE_STREAM (p_out, (p_attr->type << 3) | SIZE_IN_NEXT_BYTE);
                 UINT8_TO_BE_STREAM (p_out, p_attr->len);
             }
-
+        }
         if (p_attr->value_ptr != NULL) {
             ARRAY_TO_BE_STREAM (p_out, p_attr->value_ptr, (int)p_attr->len);
         }
@@ -666,10 +667,10 @@ BOOLEAN sdpu_compare_uuid_arrays (UINT8 *p_uuid1, UINT32 len1, UINT8 *p_uuid2, U
         if (len1 == 2) {
             return ((p_uuid1[0] == p_uuid2[0]) && (p_uuid1[1] == p_uuid2[1]));
         }
-        if (len1 == 4)
+        if (len1 == 4) {
             return (  (p_uuid1[0] == p_uuid2[0]) && (p_uuid1[1] == p_uuid2[1])
                       && (p_uuid1[2] == p_uuid2[2]) && (p_uuid1[3] == p_uuid2[3]) );
-        else {
+        } else {
             return (memcmp (p_uuid1, p_uuid2, (size_t)len1) == 0);
         }
     } else if (len1 > len2) {
@@ -926,6 +927,7 @@ UINT16 sdpu_get_attrib_entry_len(tSDP_ATTRIBUTE *p_attr)
         } else
 
 #endif/* 0xFFFF - 0xFF */
+        {
 #if (SDP_MAX_ATTR_LEN > 0xFF)
             if (p_attr->len > 0xFF) {
                 len += 3;
@@ -935,6 +937,7 @@ UINT16 sdpu_get_attrib_entry_len(tSDP_ATTRIBUTE *p_attr)
             {
                 len += 2;
             }
+        }
         len += p_attr->len;
         return len;
     }

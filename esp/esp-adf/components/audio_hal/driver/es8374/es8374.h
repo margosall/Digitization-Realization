@@ -27,7 +27,7 @@
 
 #include "esp_types.h"
 #include "audio_hal.h"
-#include "es8388.h"
+#include "esxxx_common.h"
 
 /* ES8374 address */
 #define ES8374_ADDR 0x20  // 0x22:CE=1;0x20:CE=0
@@ -41,7 +41,7 @@
  *     - ESP_OK
  *     - ESP_FAIL
  */
-esp_err_t es8374_init(audio_hal_codec_config_t *cfg);
+esp_err_t es8374_codec_init(audio_hal_codec_config_t *cfg);
 
 /**
  * @brief Deinitialize ES8374 codec chip
@@ -50,13 +50,13 @@ esp_err_t es8374_init(audio_hal_codec_config_t *cfg);
  *     - ESP_OK
  *     - ESP_FAIL
  */
-esp_err_t es8374_deinit(void);
+esp_err_t es8374_codec_deinit(void);
 
 /**
  * @brief Configure ES8374 I2S format
  *
- * @param mod:  set ADC or DAC or both
- * @param cfg:  ES8374 I2S format
+ * @param mode:  set ADC or DAC or both
+ * @param fmt:  ES8374 I2S format
  *
  * @return
  *     - ESP_OK
@@ -118,7 +118,7 @@ esp_err_t es8374_stop(es_module_t mode);
  *     - ESP_OK
  *     - ESP_FAIL
  */
-esp_err_t es8374_set_voice_volume(int volume);
+esp_err_t es8374_codec_set_voice_volume(int volume);
 
 /**
  * @brief Get voice volume
@@ -129,18 +129,18 @@ esp_err_t es8374_set_voice_volume(int volume);
  *     - ESP_OK
  *     - ESP_FAIL
  */
-esp_err_t es8374_get_voice_volume(int *volume);
+esp_err_t es8374_codec_get_voice_volume(int *volume);
 
 /**
  * @brief Mute or unmute ES8374 DAC. Basically you can use this function to mute or unmute the output
  *
- * @param mute(1) or unmute(0)
+ * @param enable mute(1) or unmute(0)
  *
  * @return
  *     - ESP_FAIL Parameter error
  *     - ESP_OK   Success
  */
-esp_err_t es8374_set_voice_mute(int enable);
+esp_err_t es8374_set_voice_mute(bool enable);
 
 /**
  * @brief Get ES8374 DAC mute status
@@ -215,7 +215,7 @@ void es8374_read_all();
  *     - ESP_FAIL Parameter error
  *     - ESP_OK   Success
  */
-esp_err_t es8374_config_i2s(audio_hal_codec_mode_t mode, audio_hal_codec_i2s_iface_t *iface);
+esp_err_t es8374_codec_config_i2s(audio_hal_codec_mode_t mode, audio_hal_codec_i2s_iface_t *iface);
 
 /**
  * @brief Control ES8374 codec chip
@@ -227,7 +227,7 @@ esp_err_t es8374_config_i2s(audio_hal_codec_mode_t mode, audio_hal_codec_i2s_ifa
  *     - ESP_FAIL Parameter error
  *     - ESP_OK   Success
  */
-esp_err_t es8374_ctrl_state(audio_hal_codec_mode_t mode, audio_hal_ctrl_t ctrl_state);
+esp_err_t es8374_codec_ctrl_state(audio_hal_codec_mode_t mode, audio_hal_ctrl_t ctrl_state);
 
 /**
  * @brief Set ES8374 PA power

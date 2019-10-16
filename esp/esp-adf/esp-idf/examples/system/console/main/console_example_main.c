@@ -18,6 +18,8 @@
 #include "argtable3/argtable3.h"
 #include "cmd_decl.h"
 #include "esp_vfs_fat.h"
+#include "nvs.h"
+#include "nvs_flash.h"
 
 static const char* TAG = "example";
 
@@ -39,22 +41,43 @@ static void initialize_filesystem()
     };
     esp_err_t err = esp_vfs_fat_spiflash_mount(MOUNT_PATH, "storage", &mount_config, &wl_handle);
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to mount FATFS (0x%x)", err);
+        ESP_LOGE(TAG, "Failed to mount FATFS (%s)", esp_err_to_name(err));
         return;
     }
 }
 #endif // CONFIG_STORE_HISTORY
 
+static void initialize_nvs()
+{
+    esp_err_t err = nvs_flash_init();
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK( nvs_flash_erase() );
+        err = nvs_flash_init();
+    }
+    ESP_ERROR_CHECK(err);
+}
+
 static void initialize_console()
 {
-    /* Disable buffering on stdin and stdout */
+    /* Disable buffering on stdin */
     setvbuf(stdin, NULL, _IONBF, 0);
-    setvbuf(stdout, NULL, _IONBF, 0);
 
     /* Minicom, screen, idf_monitor send CR when ENTER key is pressed */
     esp_vfs_dev_uart_set_rx_line_endings(ESP_LINE_ENDINGS_CR);
     /* Move the caret to the beginning of the next line on '\n' */
     esp_vfs_dev_uart_set_tx_line_endings(ESP_LINE_ENDINGS_CRLF);
+
+    /* Configure UART. Note that REF_TICK is used so that the baud rate remains
+     * correct while APB frequency is changing in light sleep mode.
+     */
+    const uart_config_t uart_config = {
+            .baud_rate = CONFIG_CONSOLE_UART_BAUDRATE,
+            .data_bits = UART_DATA_8_BITS,
+            .parity = UART_PARITY_DISABLE,
+            .stop_bits = UART_STOP_BITS_1,
+            .use_ref_tick = true
+    };
+    ESP_ERROR_CHECK( uart_param_config(CONFIG_CONSOLE_UART_NUM, &uart_config) );
 
     /* Install UART driver for interrupt-driven reads and writes */
     ESP_ERROR_CHECK( uart_driver_install(CONFIG_CONSOLE_UART_NUM,
@@ -94,6 +117,8 @@ static void initialize_console()
 
 void app_main()
 {
+    initialize_nvs();
+
 #if CONFIG_STORE_HISTORY
     initialize_filesystem();
 #endif
@@ -156,9 +181,9 @@ void app_main()
         } else if (err == ESP_ERR_INVALID_ARG) {
             // command was empty
         } else if (err == ESP_OK && ret != ESP_OK) {
-            printf("Command returned non-zero error code: 0x%x\n", ret);
+            printf("Command returned non-zero error code: 0x%x (%s)\n", ret, esp_err_to_name(err));
         } else if (err != ESP_OK) {
-            printf("Internal error: 0x%x\n", err);
+            printf("Internal error: %s\n", esp_err_to_name(err));
         }
         /* linenoise allocates line buffer on the heap, so need to free it */
         linenoiseFree(line);

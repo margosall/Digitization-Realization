@@ -16,8 +16,8 @@
  *
  ******************************************************************************/
 #include <string.h>
-#include "bt_target.h"
-#include "avrc_api.h"
+#include "common/bt_target.h"
+#include "stack/avrc_api.h"
 #include "avrc_int.h"
 
 #if (defined(AVRC_INCLUDED) && AVRC_INCLUDED == TRUE)
@@ -120,10 +120,11 @@ BOOLEAN avrc_is_valid_player_attrib_value(UINT8 attrib, UINT8 value)
         result = TRUE;
     }
 
-    if (!result)
+    if (!result) {
         AVRC_TRACE_ERROR(
             "avrc_is_valid_player_attrib_value() found not matching attrib(x%x)-value(x%x) pair!",
             attrib, value);
+    }
 
     return result;
 }

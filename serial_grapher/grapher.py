@@ -18,7 +18,7 @@ ax2 = fig.add_subplot(3,1,3)
 chans = 1 # 1 channel
 samp_rate = 44100 # 44.1kHz sampling rate
 period = 1/samp_rate
-chunk = 2048 # 2^12 samples for buffer
+chunk = 4096 # 2^12 samples for buffer
 f_vec = samp_rate*np.arange(chunk/2)/chunk
 
 last_modified = [os.path.getmtime(script_path + '/data.txt')]
@@ -26,11 +26,11 @@ last_modified = [os.path.getmtime(script_path + '/data.txt')]
 
 # Plot one settings
 
-time_scale = np.around(np.linspace(0, chunk*period*1000, num=9), 2)
-sample_scale = np.arange(0, chunk + 1, 256)
+sample_scale = np.arange(0, chunk + 1, 8192)
+time_scale = np.around(np.linspace(0, chunk*period*1000, num=len(sample_scale)), 2)
 
 ax1.set_xticks(sample_scale)
-ax1.set_xticklabels(time_scale)
+ax1.set_xticklabels(sample_scale)
 ax1.set_ylim(-32768, 32767)
 ax1.set(xlabel="t [ms]")
 

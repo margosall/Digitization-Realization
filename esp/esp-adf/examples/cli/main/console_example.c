@@ -15,30 +15,37 @@
 #include "nvs_flash.h"
 #include "esp_log.h"
 #include "sdkconfig.h"
-
 #include "audio_element.h"
 #include "audio_mem.h"
-#include "audio_hal.h"
+#include "board.h"
 #include "audio_common.h"
-
 #include "fatfs_stream.h"
 #include "raw_stream.h"
 #include "i2s_stream.h"
-#include "wav_decoder.h"
-#include "wav_encoder.h"
-#include "mp3_decoder.h"
-#include "http_stream.h"
-
 #include "esp_audio.h"
 #include "esp_peripherals.h"
 #include "periph_sdcard.h"
 #include "periph_wifi.h"
 #include "periph_button.h"
 #include "periph_console.h"
+#include "esp_decoder.h"
+#include "amr_decoder.h"
+#include "flac_decoder.h"
+#include "ogg_decoder.h"
+#include "opus_decoder.h"
+#include "mp3_decoder.h"
+#include "wav_decoder.h"
 #include "aac_decoder.h"
+#include "http_stream.h"
+#include "wav_encoder.h"
+#include "display_service.h"
+#include "led_bar_is31x.h"
+
+#define  ESP_AUDIO_AUTO_PLAY
 
 static const char *TAG = "CONSOLE_EXAMPLE";
 static esp_audio_handle_t player;
+static esp_periph_set_handle_t set;
 
 int _http_stream_event_handle(http_stream_event_msg_t *msg)
 {
@@ -59,6 +66,10 @@ static esp_err_t cli_play(esp_periph_handle_t periph, int argc, char *argv[])
 {
     ESP_LOGI(TAG, "app_audio play");
     const char *uri[] = {
+        "file://sdcard/test.amr",
+        "file://sdcard/test.flac",
+        "file://sdcard/test.ogg",
+        "file://sdcard/test.opus",
         "file://sdcard/test.mp3",
         "file://sdcard/test.wav",
         "file://sdcard/test.aac",
@@ -177,6 +188,44 @@ static esp_err_t wifi_info(esp_periph_handle_t periph, int argc, char *argv[])
     return ESP_OK;
 }
 
+static esp_err_t led(esp_periph_handle_t periph, int argc, char *argv[])
+{
+    static display_service_handle_t disp_led_serv = NULL;
+    if (disp_led_serv == NULL) {
+        esp_periph_handle_t led_bar = led_bar_is31x_init();
+        if (led_bar == NULL) {
+            ESP_LOGE(TAG, "led_bar handle create failed, this command only support lyrat-msc board");
+            return ESP_FAIL;
+        }
+        display_service_config_t display = {
+            .based_cfg = {
+                .task_stack = 0,
+                .task_prio  = 0,
+                .task_core  = 0,
+                .task_func  = NULL,
+                .service_start = NULL,
+                .service_stop = NULL,
+                .service_destroy = NULL,
+                .service_ioctl = led_bar_is31x_pattern,
+                .service_name = "DISPLAY_LED_BAR",
+                .user_data = NULL,
+            },
+            .instance = led_bar,
+        };
+        disp_led_serv = display_service_create(&display);
+    }
+    int cur_vol = 0;
+    if (argc == 1) {
+        cur_vol = atoi(argv[0]);
+    } else {
+        ESP_LOGE(TAG, "Invalid volume parameter, %d", argc);
+        return ESP_ERR_INVALID_ARG;
+    }
+    ESP_LOGI(TAG, "Set display pattern %d", cur_vol);
+    display_service_set_pattern(disp_led_serv, cur_vol, 0);
+    return ESP_OK;
+}
+
 static esp_err_t sys_reset(esp_periph_handle_t periph, int argc, char *argv[])
 {
     esp_restart();
@@ -209,6 +258,7 @@ static esp_err_t task_list(esp_periph_handle_t periph, int argc, char *argv[])
 }
 #endif
 
+
 const periph_console_cmd_t cli_cmd[] = {
     /* ======================== Esp_audio ======================== */
     { .cmd = "play",        .id = 1, .help = "Play music",               .func = cli_play },
@@ -222,6 +272,9 @@ const periph_console_cmd_t cli_cmd[] = {
     /* ======================== Wi-Fi ======================== */
     { .cmd = "join",        .id = 20, .help = "Join WiFi AP as a station",      .func = wifi_set },
     { .cmd = "wifi",        .id = 21, .help = "Get connected AP information",   .func = wifi_info },
+
+    /* ======================== Led bar ======================== */
+    { .cmd = "led",         .id = 1,  .help = "Lyrat-MSC led bar pattern", .func = led },
 
     /* ======================== System ======================== */
     { .cmd = "reboot",      .id = 30, .help = "Reboot system",            .func = sys_reset },
@@ -248,31 +301,13 @@ static void esp_audio_state_task (void *para)
 static void cli_setup_wifi()
 {
     ESP_LOGI(TAG, "Start Wi-Fi");
-    esp_periph_config_t periph_cfg = { 0 };
-    esp_periph_init(&periph_cfg);
     periph_wifi_cfg_t wifi_cfg = {
         .disable_auto_reconnect = true,
         .ssid = "",
         .password = "",
     };
     esp_periph_handle_t wifi_handle = periph_wifi_init(&wifi_cfg);
-    esp_periph_start(wifi_handle);
-}
-
-static void cli_setup_sdcard()
-{
-    ESP_LOGI(TAG, "Start SdCard");
-    periph_sdcard_cfg_t sdcard_cfg = {
-        .root = "/sdcard",
-        .card_detect_pin = SD_CARD_INTR_GPIO, // GPIO_NUM_34
-    };
-    esp_periph_handle_t sdcard_handle = periph_sdcard_init(&sdcard_cfg);
-    esp_periph_start(sdcard_handle);
-
-    while (!periph_sdcard_is_mounted(sdcard_handle)) {
-        vTaskDelay(1000 / portTICK_PERIOD_MS);
-        ESP_LOGI(TAG, "sdcard mounting...");
-    }
+    esp_periph_start(set, wifi_handle);
 }
 
 static void cli_setup_console()
@@ -282,7 +317,7 @@ static void cli_setup_console()
         .commands = cli_cmd,
     };
     esp_periph_handle_t console_handle = periph_console_init(&console_cfg);
-    esp_periph_start(console_handle);
+    esp_periph_start(set, console_handle);
 }
 
 static void cli_setup_player(void)
@@ -290,18 +325,15 @@ static void cli_setup_player(void)
     if (player ) {
         return ;
     }
-    esp_audio_cfg_t cfg = {
-        .in_stream_buf_size = 10 * 1024,
-        .out_stream_buf_size = 6 * 1024,
-        .evt_que = NULL,
-        .resample_rate = 0,
-        .hal = NULL,
-    };
-    audio_hal_codec_config_t audio_hal_codec_cfg =  AUDIO_HAL_ES8388_DEFAULT();
-    cfg.hal = audio_hal_init(&audio_hal_codec_cfg, 0);
+    esp_audio_cfg_t cfg = DEFAULT_ESP_AUDIO_CONFIG();
+    audio_board_handle_t board_handle = audio_board_init();
+    cfg.vol_handle = board_handle->audio_hal;
+    cfg.vol_set = (audio_volume_set)audio_hal_set_volume;
+    cfg.vol_get = (audio_volume_get)audio_hal_get_volume;
+    cfg.prefer_type = ESP_AUDIO_PREFER_MEM;
     cfg.evt_que = xQueueCreate(3, sizeof(esp_audio_state_t));
-    audio_hal_ctrl_codec(cfg.hal, AUDIO_HAL_CODEC_MODE_DECODE, AUDIO_HAL_CTRL_START);
     player = esp_audio_create(&cfg);
+    audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
     xTaskCreate(esp_audio_state_task, "player_task", 4096, cfg.evt_que, 1, NULL);
 
     // Create readers and add to esp_audio
@@ -337,11 +369,36 @@ static void cli_setup_player(void)
     esp_audio_output_stream_add(player, raw_stream_init(&raw_writer));
 
     // Add decoders and encoders to esp_audio
-    wav_decoder_cfg_t wav_dec_cfg = DEFAULT_WAV_DECODER_CONFIG();
-    mp3_decoder_cfg_t mp3_dec_cfg = DEFAULT_MP3_DECODER_CONFIG();
-    aac_decoder_cfg_t aac_dec_cfg = DEFAULT_AAC_DECODER_CONFIG();
-    esp_audio_codec_lib_add(player, AUDIO_CODEC_TYPE_DECODER, wav_decoder_init(&wav_dec_cfg));
+#ifdef ESP_AUDIO_AUTO_PLAY
+    audio_decoder_t auto_decode[] = {
+        DEFAULT_ESP_AMRNB_DECODER_CONFIG(),
+        DEFAULT_ESP_AMRWB_DECODER_CONFIG(),
+        DEFAULT_ESP_FLAC_DECODER_CONFIG(),
+        DEFAULT_ESP_OGG_DECODER_CONFIG(),
+        DEFAULT_ESP_OPUS_DECODER_CONFIG(),
+        DEFAULT_ESP_MP3_DECODER_CONFIG(),
+        DEFAULT_ESP_WAV_DECODER_CONFIG(),
+        DEFAULT_ESP_AAC_DECODER_CONFIG(),
+        DEFAULT_ESP_M4A_DECODER_CONFIG(),
+        DEFAULT_ESP_TS_DECODER_CONFIG(),
+    };
+    esp_decoder_cfg_t auto_dec_cfg = DEFAULT_ESP_DECODER_CONFIG();
+    esp_audio_codec_lib_add(player, AUDIO_CODEC_TYPE_DECODER, esp_decoder_init(&auto_dec_cfg, auto_decode, 10));
+#else
+    amr_decoder_cfg_t  amr_dec_cfg  = DEFAULT_AMR_DECODER_CONFIG();
+    flac_decoder_cfg_t flac_dec_cfg = DEFAULT_FLAC_DECODER_CONFIG();
+    ogg_decoder_cfg_t  ogg_dec_cfg  = DEFAULT_OGG_DECODER_CONFIG();
+    opus_decoder_cfg_t opus_dec_cfg = DEFAULT_OPUS_DECODER_CONFIG();
+    mp3_decoder_cfg_t  mp3_dec_cfg  = DEFAULT_MP3_DECODER_CONFIG();
+    wav_decoder_cfg_t  wav_dec_cfg  = DEFAULT_WAV_DECODER_CONFIG();
+    aac_decoder_cfg_t  aac_dec_cfg  = DEFAULT_AAC_DECODER_CONFIG();
+
+    esp_audio_codec_lib_add(player, AUDIO_CODEC_TYPE_DECODER, amr_decoder_init(&amr_dec_cfg));
+    esp_audio_codec_lib_add(player, AUDIO_CODEC_TYPE_DECODER, flac_decoder_init(&flac_dec_cfg));
+    esp_audio_codec_lib_add(player, AUDIO_CODEC_TYPE_DECODER, ogg_decoder_init(&ogg_dec_cfg));
+    esp_audio_codec_lib_add(player, AUDIO_CODEC_TYPE_DECODER, decoder_opus_init(&opus_dec_cfg));
     esp_audio_codec_lib_add(player, AUDIO_CODEC_TYPE_DECODER, mp3_decoder_init(&mp3_dec_cfg));
+    esp_audio_codec_lib_add(player, AUDIO_CODEC_TYPE_DECODER, wav_decoder_init(&wav_dec_cfg));
     esp_audio_codec_lib_add(player, AUDIO_CODEC_TYPE_DECODER, aac_decoder_init(&aac_dec_cfg));
     audio_element_handle_t m4a_dec_cfg = aac_decoder_init(&aac_dec_cfg);
     audio_element_set_tag(m4a_dec_cfg, "m4a");
@@ -353,7 +410,7 @@ static void cli_setup_player(void)
 
     wav_encoder_cfg_t wav_enc_cfg = DEFAULT_WAV_ENCODER_CONFIG();
     esp_audio_codec_lib_add(player, AUDIO_CODEC_TYPE_ENCODER, wav_encoder_init(&wav_enc_cfg));
-
+#endif
     // Set default volume
     esp_audio_vol_set(player, 45);
     AUDIO_MEM_SHOW(TAG);
@@ -365,10 +422,10 @@ void app_main(void)
     esp_log_level_set("*", ESP_LOG_INFO);
     ESP_ERROR_CHECK(nvs_flash_init());
     tcpip_adapter_init();
-    esp_periph_config_t periph_cfg = { 0 };
-    esp_periph_init(&periph_cfg);
+    esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
+    set = esp_periph_set_init(&periph_cfg);
 
-    cli_setup_sdcard();
+    audio_board_sdcard_init(set);
     cli_setup_wifi();
     cli_setup_player();
 

@@ -24,7 +24,6 @@
 
 #ifndef _AUDIO_HAL_H_
 #define _AUDIO_HAL_H_
-
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -34,45 +33,9 @@
 extern "C" {
 #endif
 
-#define AUDIO_HAL_VOL_DEFAULT 30
+#define AUDIO_HAL_VOL_DEFAULT 70
 
-typedef struct audio_hal* audio_hal_handle_t;
-
-#define AUDIO_HAL_ES8388_DEFAULT(){                     \
-        .adc_input  = AUDIO_HAL_ADC_INPUT_LINE1,        \
-        .dac_output = AUDIO_HAL_DAC_OUTPUT_ALL,         \
-        .codec_mode = AUDIO_HAL_CODEC_MODE_BOTH,        \
-        .i2s_iface = {                                  \
-            .mode = AUDIO_HAL_MODE_SLAVE,               \
-            .fmt = AUDIO_HAL_I2S_NORMAL,                \
-            .samples = AUDIO_HAL_48K_SAMPLES,           \
-            .bits = AUDIO_HAL_BIT_LENGTH_16BITS,        \
-        },                                              \
-};
-
-#define AUDIO_HAL_ES8374_DEFAULT(){                     \
-        .adc_input  = AUDIO_HAL_ADC_INPUT_LINE1,        \
-        .dac_output = AUDIO_HAL_DAC_OUTPUT_LINE1,       \
-        .codec_mode = AUDIO_HAL_CODEC_MODE_BOTH,        \
-        .i2s_iface = {                                  \
-            .mode = AUDIO_HAL_MODE_SLAVE,               \
-            .fmt = AUDIO_HAL_I2S_NORMAL,                \
-            .samples = AUDIO_HAL_48K_SAMPLES,           \
-            .bits = AUDIO_HAL_BIT_LENGTH_16BITS,        \
-        },                                              \
-};
-
-#define AUDIO_HAL_AC101_DEFAULT(){                     \
-    .adc_input  = AUDIO_HAL_ADC_INPUT_LINE1,        \
-    .dac_output = AUDIO_HAL_DAC_OUTPUT_ALL,         \
-    .codec_mode = AUDIO_HAL_CODEC_MODE_BOTH,        \
-    .i2s_iface = {                                  \
-        .mode = AUDIO_HAL_MODE_SLAVE,               \
-        .fmt = AUDIO_HAL_I2S_NORMAL,                \
-        .samples = AUDIO_HAL_48K_SAMPLES,           \
-        .bits = AUDIO_HAL_BIT_LENGTH_16BITS,        \
-    },                                              \
-};
+typedef struct audio_hal *audio_hal_handle_t;
 
 /**
  * @brief Select media hal codec mode
@@ -131,8 +94,6 @@ typedef enum {
     AUDIO_HAL_32K_SAMPLES,   /*!< set to 32k samples in per second */
     AUDIO_HAL_44K_SAMPLES,   /*!< set to 44.1k samples per second */
     AUDIO_HAL_48K_SAMPLES,   /*!< set to 48k samples per second */
-    AUDIO_HAL_96K_SAMPLES,
-    AUDIO_HAL_192K_SAMPLES
 } audio_hal_iface_samples_t;
 
 /**
@@ -140,8 +101,8 @@ typedef enum {
  */
 typedef enum {
     AUDIO_HAL_BIT_LENGTH_16BITS = 1,   /*!< set 16 bits per sample */
-    AUDIO_HAL_BIT_LENGTH_24BITS,   /*!< set 24 bits per sample */
-    AUDIO_HAL_BIT_LENGTH_32BITS,  /*!< set 32 bits per sample */
+    AUDIO_HAL_BIT_LENGTH_24BITS,       /*!< set 24 bits per sample */
+    AUDIO_HAL_BIT_LENGTH_32BITS,       /*!< set 32 bits per sample */
 } audio_hal_iface_bits_t;
 
 /**
@@ -168,11 +129,27 @@ typedef struct {
  * @brief Configure media hal for initialization of audio codec chip
  */
 typedef struct {
-    audio_hal_adc_input_t adc_input;    /*!< set adc channel */
-    audio_hal_dac_output_t dac_output;  /*!< set dac channel */
-    audio_hal_codec_mode_t codec_mode;  /*!< select codec mode: adc, dac or both */
+    audio_hal_adc_input_t adc_input;       /*!< set adc channel */
+    audio_hal_dac_output_t dac_output;     /*!< set dac channel */
+    audio_hal_codec_mode_t codec_mode;     /*!< select codec mode: adc, dac or both */
     audio_hal_codec_i2s_iface_t i2s_iface; /*!< set I2S interface configuration */
 } audio_hal_codec_config_t;
+
+/**
+ * @brief Configuration of functions and variables used to operate audio codec chip
+ */
+typedef struct audio_hal {
+    esp_err_t (*audio_codec_initialize)(audio_hal_codec_config_t *codec_cfg);                                /*!< initialize codec */
+    esp_err_t (*audio_codec_deinitialize)(void);                                                             /*!< deinitialize codec */
+    esp_err_t (*audio_codec_ctrl)(audio_hal_codec_mode_t mode, audio_hal_ctrl_t ctrl_state);                 /*!< control codec mode and state */
+    esp_err_t (*audio_codec_config_iface)(audio_hal_codec_mode_t mode, audio_hal_codec_i2s_iface_t *iface);  /*!< configure i2s interface */
+    esp_err_t (*audio_codec_set_mute) (bool mute);                                                           /*!< set codec mute */
+    esp_err_t (*audio_codec_set_volume)(int volume);                                                         /*!< set codec volume */
+    esp_err_t (*audio_codec_get_volume)(int *volume);                                                        /*!< get codec volume */
+    xSemaphoreHandle audio_hal_lock;                                                                         /*!< semaphore of codec */
+    void *handle;                                                                                            /*!< handle of audio codec */
+} audio_hal_func_t;
+
 
 /**
  * @brief Initialize media codec driver
@@ -180,21 +157,20 @@ typedef struct {
  * @note If selected codec has already been installed, it'll return the audio_hal handle.
  *
  * @param audio_hal_conf Configure structure audio_hal_config_t
- * @param index Indicates which codec will be initialized
+ * @param audio_hal_func Structure containing functions used to operate audio the codec chip
  *
  * @return  int, 0--success, others--fail
  */
-audio_hal_handle_t audio_hal_init(audio_hal_codec_config_t* audio_hal_conf, int index);
+audio_hal_handle_t audio_hal_init(audio_hal_codec_config_t *audio_hal_conf, audio_hal_func_t *audio_hal_func);
 
 /**
  * @brief Uninitialize media codec driver
  *
  * @param audio_hal reference function pointer for selected audio codec
- * @param index Indicates which codec will be deinitialized
  *
  * @return  int, 0--success, others--fail
  */
-esp_err_t audio_hal_deinit(audio_hal_handle_t audio_hal, int index);
+esp_err_t audio_hal_deinit(audio_hal_handle_t audio_hal);
 
 /**
  * @brief Start/stop codec driver
@@ -218,7 +194,18 @@ esp_err_t audio_hal_ctrl_codec(audio_hal_handle_t audio_hal, audio_hal_codec_mod
  *     - 0   Success
  *     - -1  Error
  */
-esp_err_t audio_hal_codec_iface_config(audio_hal_handle_t audio_hal, audio_hal_codec_mode_t mode, audio_hal_codec_i2s_iface_t* iface);
+esp_err_t audio_hal_codec_iface_config(audio_hal_handle_t audio_hal, audio_hal_codec_mode_t mode, audio_hal_codec_i2s_iface_t *iface);
+
+/**
+ * @brief Set voice mute. Enables or disables DAC mute of a codec.
+ *        @note `audio_hal_get_volume` will still give a non-zero number in mute state. It will be set to that number when speaker is unmuted.
+ *
+ * @param audio_hal reference function pointer for selected audio codec
+ * @param mute      true/false. If true speaker will be muted and if false speaker will be unmuted.
+ *
+ * @return     int, 0--success, others--fail
+ */
+esp_err_t audio_hal_set_mute(audio_hal_handle_t audio_hal, bool mute);
 
 /**
  * @brief Set voice volume.
@@ -240,7 +227,7 @@ esp_err_t audio_hal_set_volume(audio_hal_handle_t audio_hal, int volume);
  *
  * @return     int, 0--success, others--fail
  */
-esp_err_t audio_hal_get_volume(audio_hal_handle_t audio_hal, int* volume);
+esp_err_t audio_hal_get_volume(audio_hal_handle_t audio_hal, int *volume);
 
 
 #ifdef __cplusplus

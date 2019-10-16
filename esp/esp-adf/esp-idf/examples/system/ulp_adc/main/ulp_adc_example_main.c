@@ -74,11 +74,13 @@ static void init_ulp_program()
     /* Set ULP wake up period to 20ms */
     ulp_set_wakeup_period(0, 20000);
 
-    /* Disable pullup on GPIO15, in case it is connected to ground to suppress
-     * boot messages.
+    /* Disconnect GPIO12 and GPIO15 to remove current drain through
+     * pullup/pulldown resistors.
+     * GPIO12 may be pulled high to select flash voltage.
      */
-    rtc_gpio_pullup_dis(GPIO_NUM_15);
-    rtc_gpio_hold_en(GPIO_NUM_15);
+    rtc_gpio_isolate(GPIO_NUM_12);
+    rtc_gpio_isolate(GPIO_NUM_15);
+    esp_deep_sleep_disable_rom_logging(); // suppress boot messages
 }
 
 static void start_ulp_program()
@@ -87,6 +89,6 @@ static void start_ulp_program()
     ulp_sample_counter = 0;
 
     /* Start the program */
-    esp_err_t err = ulp_run((&ulp_entry - RTC_SLOW_MEM) / sizeof(uint32_t));
+    esp_err_t err = ulp_run(&ulp_entry - RTC_SLOW_MEM);
     ESP_ERROR_CHECK(err);
 }

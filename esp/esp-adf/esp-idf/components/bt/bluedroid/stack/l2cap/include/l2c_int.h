@@ -26,11 +26,11 @@
 
 #include <stdbool.h>
 
-#include "btm_api.h"
-#include "l2c_api.h"
-#include "l2cdefs.h"
-#include "list.h"
-#include "fixed_queue.h"
+#include "stack/btm_api.h"
+#include "stack/l2c_api.h"
+#include "stack/l2cdefs.h"
+#include "osi/list.h"
+#include "osi/fixed_queue.h"
 
 #define L2CAP_MIN_MTU   48      /* Minimum acceptable MTU is 48 bytes */
 
@@ -66,7 +66,7 @@
 #define L2CAP_WAIT_UNPARK_TOUT       2            /* 2 seconds */
 #define L2CAP_LINK_INFO_RESP_TOUT    2            /* 2 seconds */
 #define L2CAP_UPDATE_CONN_PARAM_TOUT 6            /* 6 seconds */
-#define L2CAP_BLE_LINK_CONNECT_TOUT  30           /* 30 seconds */
+#define L2CAP_BLE_LINK_CONNECT_TOUT  BLE_ESTABLISH_LINK_CONNECTION_TIMEOUT  // configed in menuconfig
 #define L2CAP_BLE_CONN_PARAM_UPD_TOUT   30        /* 30 seconds */
 
 /* quick timer uses millisecond unit */
@@ -376,6 +376,7 @@ typedef struct t_l2c_linkcb {
 
     TIMER_LIST_ENT      timer_entry;                /* Timer list entry for timeout evt */
     UINT16              handle;                     /* The handle used with LM          */
+    UINT16              completed_packets;          /* The number of conpleted packets  */
 
     tL2C_CCB_Q          ccb_queue;                  /* Queue of CCBs on this LCB        */
 
@@ -666,6 +667,10 @@ extern void l2cu_send_peer_ble_flow_control_credit(tL2C_CCB *p_ccb, UINT16 credi
 extern void l2cu_send_peer_ble_credit_based_disconn_req(tL2C_CCB *p_ccb);
 
 #endif
+
+#if (C2H_FLOW_CONTROL_INCLUDED == TRUE)
+extern UINT8 l2cu_find_completed_packets(UINT16 *handles, UINT16 *num_packets);
+#endif ///C2H_FLOW_CONTROL_INCLUDED == TRUE
 
 extern BOOLEAN l2cu_initialize_fixed_ccb (tL2C_LCB *p_lcb, UINT16 fixed_cid, tL2CAP_FCR_OPTS *p_fcr);
 extern void    l2cu_no_dynamic_ccbs (tL2C_LCB *p_lcb);

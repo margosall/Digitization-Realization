@@ -29,6 +29,7 @@
 #include "esp_intr.h"
 #include "esp_attr.h"
 #include "esp_intr_alloc.h"
+#include "esp_ipc.h"
 #include <limits.h>
 #include <assert.h>
 
@@ -194,10 +195,10 @@ static void insert_vector_desc(vector_desc_t *to_insert)
         prev=vd;
         vd=vd->next;
     }
-    if (vd==NULL && prev==NULL) {
+    if ((vector_desc_head==NULL) || (prev==NULL)) {
         //First item
+        to_insert->next = vd;
         vector_desc_head=to_insert;
-        vector_desc_head->next=NULL;
     } else {
         prev->next=to_insert;
         to_insert->next=vd;
@@ -685,14 +686,40 @@ esp_err_t esp_intr_alloc(int source, int flags, intr_handler_t handler, void *ar
     return esp_intr_alloc_intrstatus(source, flags, 0, 0, handler, arg, ret_handle);
 }
 
+esp_err_t IRAM_ATTR esp_intr_set_in_iram(intr_handle_t handle, bool is_in_iram)
+{
+    if (!handle) return ESP_ERR_INVALID_ARG;
+    vector_desc_t *vd = handle->vector_desc;
+    if (vd->flags & VECDESC_FL_SHARED) {
+      return ESP_ERR_INVALID_ARG;
+    }
+    portENTER_CRITICAL(&spinlock);
+    uint32_t mask = (1 << vd->intno);
+    if (is_in_iram) {
+        vd->flags |= VECDESC_FL_INIRAM;
+        non_iram_int_mask[vd->cpu] &= ~mask;
+    } else {
+        vd->flags &= ~VECDESC_FL_INIRAM;
+        non_iram_int_mask[vd->cpu] |= mask;
+    }
+    portEXIT_CRITICAL(&spinlock);
+    return ESP_OK;
+}
+
+static void esp_intr_free_cb(void *arg)
+{
+    (void)esp_intr_free((intr_handle_t)arg);
+}
 
 esp_err_t esp_intr_free(intr_handle_t handle)
 {
     bool free_shared_vector=false;
     if (!handle) return ESP_ERR_INVALID_ARG;
-    //This routine should be called from the interrupt the task is scheduled on.
-    if (handle->vector_desc->cpu!=xPortGetCoreID()) return ESP_ERR_INVALID_ARG;
-
+    //Assign this routine to the core where this interrupt is allocated on.
+    if (handle->vector_desc->cpu!=xPortGetCoreID()) {
+        esp_err_t ret = esp_ipc_call_blocking(handle->vector_desc->cpu, &esp_intr_free_cb, (void *)handle);
+        return ret == ESP_OK ? ESP_OK : ESP_FAIL;
+    }
     portENTER_CRITICAL(&spinlock);
     esp_intr_disable(handle);
     if (handle->vector_desc->flags&VECDESC_FL_SHARED) {

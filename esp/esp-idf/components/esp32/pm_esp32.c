@@ -264,7 +264,7 @@ void IRAM_ATTR esp_pm_impl_switch_mode(pm_mode_t mode,
 {
     bool need_switch = false;
     uint32_t mode_mask = BIT(mode);
-    portENTER_CRITICAL(&s_switch_lock);
+    portENTER_CRITICAL_SAFE(&s_switch_lock);
     uint32_t count;
     if (lock_or_unlock == MODE_LOCK) {
         count = ++s_mode_lock_counts[mode];
@@ -291,7 +291,7 @@ void IRAM_ATTR esp_pm_impl_switch_mode(pm_mode_t mode,
         s_last_mode_change_time = now;
 #endif // WITH_PROFILING
     }
-    portEXIT_CRITICAL(&s_switch_lock);
+    portEXIT_CRITICAL_SAFE(&s_switch_lock);
     if (need_switch && new_mode != s_mode) {
         do_switch(new_mode);
     }
@@ -457,10 +457,6 @@ void IRAM_ATTR esp_pm_impl_isr_hook()
 {
     int core_id = xPortGetCoreID();
     ESP_PM_TRACE_ENTER(ISR_HOOK, core_id);
-    /* Prevent higher level interrupts (than the one this function was called from)
-     * from happening in this section, since they will also call into esp_pm_impl_isr_hook. 
-     */
-    uint32_t state = portENTER_CRITICAL_NESTED();
 #if portNUM_PROCESSORS == 2
     if (s_need_update_ccompare[core_id]) {
         update_ccompare();
@@ -471,7 +467,6 @@ void IRAM_ATTR esp_pm_impl_isr_hook()
 #else
     leave_idle();
 #endif // portNUM_PROCESSORS == 2
-    portEXIT_CRITICAL_NESTED(state);
     ESP_PM_TRACE_EXIT(ISR_HOOK, core_id);
 }
 

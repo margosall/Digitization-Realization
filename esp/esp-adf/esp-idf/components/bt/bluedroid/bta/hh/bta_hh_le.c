@@ -16,20 +16,20 @@
  *
  ******************************************************************************/
 
-#include "bta_api.h"
+#include "bta/bta_api.h"
 #include "bta_hh_int.h"
 
 #if (defined BTA_HH_LE_INCLUDED && BTA_HH_LE_INCLUDED == TRUE)
 
-#include "bta_api.h"
+#include "bta/bta_api.h"
 #include <string.h>
-#include "btm_api.h"
-#include "btm_ble_api.h"
-#include "bta_hh_co.h"
-#include "bta_gatt_api.h"
+#include "stack/btm_api.h"
+#include "stack/btm_ble_api.h"
+#include "bta/bta_hh_co.h"
+#include "bta/bta_gatt_api.h"
 #include "srvc_api.h"
 #include "btm_int.h"
-#include "utl.h"
+#include "bta/utl.h"
 
 #define LOG_TAG "bt_bta_hh"
 #include "osi/include/log.h"
@@ -613,7 +613,7 @@ tBTA_HH_STATUS bta_hh_le_read_char_dscrpt(tBTA_HH_DEV_CB *p_cb, UINT16 srvc_uuid
         status = BTA_HH_OK;
     } else {
 #if BTA_HH_DEBUG == TRUE
-        LOG_WARN("%s No descriptor exists: %s(0x%04x)", __func__,
+        APPL_TRACE_WARNING("%s No descriptor exists: %s(0x%04x)", __func__,
                  bta_hh_uuid_to_str(char_descp_uuid), char_descp_uuid);
 #endif
     }
@@ -1092,7 +1092,7 @@ void bta_hh_le_expl_rpt(tBTA_HH_DEV_CB *p_dev_cb,
         p_char_id = &char_result;
     } while (1);
 
-    LOG_INFO("%s all BLE reports searched", __func__);
+    APPL_TRACE_API("%s all BLE reports searched", __func__);
     bta_hh_le_read_rpt_ref_descr(p_dev_cb,
                                  &p_dev_cb->hid_srvc[p_dev_cb->cur_srvc_index].report[0]);
 
@@ -2183,9 +2183,10 @@ void bta_hh_le_write_char_descr_cmpl(tBTA_HH_DEV_CB *p_dev_cb, tBTA_HH_DATA *p_b
         case GATT_UUID_HID_BT_KB_INPUT:
         case GATT_UUID_HID_BT_MOUSE_INPUT:
         case GATT_UUID_HID_REPORT:
-            if (p_data->status == BTA_GATT_OK)
+            if (p_data->status == BTA_GATT_OK) {
                 p_dev_cb->hid_srvc[hid_inst_id].report[p_dev_cb->clt_cfg_idx].client_cfg_value =
                     BTA_GATT_CLT_CONFIG_NOTIFICATION;
+            }
             p_dev_cb->clt_cfg_idx ++;
             bta_hh_le_write_rpt_clt_cfg(p_dev_cb, hid_inst_id);
 
@@ -2577,7 +2578,7 @@ void bta_hh_le_get_dscp_act(tBTA_HH_DEV_CB *p_cb)
 **
 ** Function         bta_hh_le_add_dev_bg_conn
 **
-** Description      Remove a LE HID device from back ground connection procedure.
+** Description      Remove a LE HID device from background connection procedure.
 **
 ** Returns          void
 **
@@ -2613,7 +2614,7 @@ static void bta_hh_le_add_dev_bg_conn(tBTA_HH_DEV_CB *p_cb, BOOLEAN check_bond)
 ** Function         bta_hh_le_add_device
 **
 ** Description      Add a LE HID device as a known device, and also add the address
-**                  into back ground connection WL for incoming connection.
+**                  into background connection WL for incoming connection.
 **
 ** Returns          void
 **
@@ -2648,7 +2649,7 @@ UINT8 bta_hh_le_add_device(tBTA_HH_DEV_CB *p_cb, tBTA_HH_MAINT_DEV *p_dev_info)
 **
 ** Function         bta_hh_le_remove_dev_bg_conn
 **
-** Description      Remove a LE HID device from back ground connection procedure.
+** Description      Remove a LE HID device from background connection procedure.
 **
 ** Returns          void
 **

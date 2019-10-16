@@ -22,10 +22,12 @@
 #include "esp_pm.h"
 #include "esp_log.h"
 #include "esp_crosscore_int.h"
+#include "esp_clk.h"
 
 #include "soc/rtc.h"
 
 #include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #include "freertos/xtensa_timer.h"
 #include "xtensa/core-macros.h"
 
@@ -38,6 +40,21 @@
  * for the purpose of detecting a deadlock.
  */
 #define CCOMPARE_UPDATE_TIMEOUT 1000000
+
+/* When changing CCOMPARE, don't allow changes if the difference is less
+ * than this. This is to prevent setting CCOMPARE below CCOUNT.
+ */
+#define CCOMPARE_MIN_CYCLES_IN_FUTURE 1000
+
+/* When light sleep is used, wake this number of microseconds earlier than
+ * the next tick.
+ */
+#define LIGHT_SLEEP_EARLY_WAKEUP_US 100
+
+/* Minimal divider at which REF_CLK_FREQ can be obtained */
+#define REF_CLK_DIV_MIN 10
+
+#define MHZ 1000000
 
 #ifdef CONFIG_PM_PROFILING
 #define WITH_PROFILING
@@ -63,52 +80,52 @@ static uint32_t s_mode_mask;
 static uint32_t s_ccount_div;
 static uint32_t s_ccount_mul;
 
+#if CONFIG_FREERTOS_USE_TICKLESS_IDLE
+/* Indicates if light sleep entry was skipped in vApplicationSleep for given CPU.
+ * This in turn gets used in IDLE hook to decide if `waiti` needs
+ * to be invoked or not.
+ */
+static bool s_skipped_light_sleep[portNUM_PROCESSORS];
+
+#if portNUM_PROCESSORS == 2
+/* When light sleep is finished on one CPU, it is possible that the other CPU
+ * will enter light sleep again very soon, before interrupts on the first CPU
+ * get a chance to run. To avoid such situation, set a flag for the other CPU to
+ * skip light sleep attempt.
+ */
+static bool s_skip_light_sleep[portNUM_PROCESSORS];
+#endif // portNUM_PROCESSORS == 2
+#endif // CONFIG_FREERTOS_USE_TICKLESS_IDLE
+
 /* Indicates to the ISR hook that CCOMPARE needs to be updated on the given CPU.
  * Used in conjunction with cross-core interrupt to update CCOMPARE on the other CPU.
  */
 static volatile bool s_need_update_ccompare[portNUM_PROCESSORS];
-
-/* When no RTOS tasks are active, these locks are released to allow going into
- * a lower power mode. Used by ISR hook and idle hook.
- */
-static esp_pm_lock_handle_t s_rtos_lock_handle[portNUM_PROCESSORS];
 
 /* A flag indicating that Idle hook has run on a given CPU;
  * Next interrupt on the same CPU will take s_rtos_lock_handle.
  */
 static bool s_core_idle[portNUM_PROCESSORS];
 
-/* g_ticks_us defined in ROM for PRO CPU */
-extern uint32_t g_ticks_per_us_pro;
+/* When no RTOS tasks are active, these locks are released to allow going into
+ * a lower power mode. Used by ISR hook and idle hook.
+ */
+static esp_pm_lock_handle_t s_rtos_lock_handle[portNUM_PROCESSORS];
 
-/* Lookup table of CPU frequencies to be used in each mode.
+/* Lookup table of CPU frequency configs to be used in each mode.
  * Initialized by esp_pm_impl_init and modified by esp_pm_configure.
  */
-rtc_cpu_freq_t s_cpu_freq_by_mode[PM_MODE_COUNT];
+rtc_cpu_freq_config_t s_cpu_freq_by_mode[PM_MODE_COUNT];
 
-/* Lookup table of CPU ticks per microsecond for each RTC_CPU_FREQ_ value.
- * Essentially the same as returned by rtc_clk_cpu_freq_value(), but without
- * the function call. Not const because XTAL frequency is only known at run time.
- */
-static uint32_t s_cpu_freq_to_ticks[] = {
-       [RTC_CPU_FREQ_XTAL] = 0, /* This is set by esp_pm_impl_init */
-       [RTC_CPU_FREQ_80M]  = 80,
-       [RTC_CPU_FREQ_160M] = 160,
-       [RTC_CPU_FREQ_240M] = 240,
-       [RTC_CPU_FREQ_2M]   = 2
-};
-
-/* Lookup table of names for each RTC_CPU_FREQ_ value. Used for logging only. */
-static const char* s_freq_names[] __attribute__((unused)) = {
-        [RTC_CPU_FREQ_XTAL] = "XTAL",
-        [RTC_CPU_FREQ_80M] = "80",
-        [RTC_CPU_FREQ_160M] = "160",
-        [RTC_CPU_FREQ_240M] = "240",
-        [RTC_CPU_FREQ_2M] = "2"
-};
-
-/* Whether automatic light sleep is enabled. Currently always false */
+/* Whether automatic light sleep is enabled */
 static bool s_light_sleep_en = false;
+
+/* When configuration is changed, current frequency may not match the
+ * newly configured frequency for the current mode. This is an indicator
+ * to the mode switch code to get the actual current frequency instead of
+ * relying on the current mode.
+ */
+static bool s_config_changed = false;
 
 #ifdef WITH_PROFILING
 /* Time, in microseconds, spent so far in each mode */
@@ -155,40 +172,74 @@ esp_err_t esp_pm_configure(const void* vconfig)
 #endif
 
     const esp_pm_config_esp32_t* config = (const esp_pm_config_esp32_t*) vconfig;
+#ifndef CONFIG_FREERTOS_USE_TICKLESS_IDLE
     if (config->light_sleep_enable) {
         return ESP_ERR_NOT_SUPPORTED;
     }
-    rtc_cpu_freq_t min_freq = config->min_cpu_freq;
-    rtc_cpu_freq_t max_freq = config->max_cpu_freq;
+#endif
 
-    rtc_cpu_freq_t apb_max_freq; /* CPU frequency in APB_MAX mode */
-    if (max_freq == RTC_CPU_FREQ_240M) {
+    int min_freq_mhz = config->min_freq_mhz;
+    int max_freq_mhz = config->max_freq_mhz;
+
+    if (min_freq_mhz == 0 && max_freq_mhz == 0) {
+        /* For compatibility, handle deprecated fields, min_cpu_freq and max_cpu_freq. */
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+        min_freq_mhz = rtc_clk_cpu_freq_value(config->min_cpu_freq) / MHZ;
+        max_freq_mhz = rtc_clk_cpu_freq_value(config->max_cpu_freq) / MHZ;
+#pragma GCC diagnostic pop
+    }
+
+    if (min_freq_mhz > max_freq_mhz) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    rtc_cpu_freq_config_t freq_config;
+    if (!rtc_clk_cpu_freq_mhz_to_config(min_freq_mhz, &freq_config)) {
+        ESP_LOGW(TAG, "invalid min_freq_mhz value (%d)", min_freq_mhz);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    int xtal_freq_mhz = (int) rtc_clk_xtal_freq_get();
+    if (min_freq_mhz < xtal_freq_mhz && min_freq_mhz * MHZ / REF_CLK_FREQ < REF_CLK_DIV_MIN) {
+        ESP_LOGW(TAG, "min_freq_mhz should be >= %d", REF_CLK_FREQ * REF_CLK_DIV_MIN / MHZ);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    if (!rtc_clk_cpu_freq_mhz_to_config(max_freq_mhz, &freq_config)) {
+        ESP_LOGW(TAG, "invalid max_freq_mhz value (%d)", max_freq_mhz);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    int apb_max_freq = max_freq_mhz; /* CPU frequency in APB_MAX mode */
+    if (max_freq_mhz == 240) {
         /* We can't switch between 240 and 80/160 without disabling PLL,
          * so use 240MHz CPU frequency when 80MHz APB frequency is requested.
          */
-        apb_max_freq = RTC_CPU_FREQ_240M;
-    } else {
-        /* Otherwise (max CPU frequency is 80MHz or 160MHz), can use 80MHz
+        apb_max_freq = 240;
+    } else if (max_freq_mhz == 160 || max_freq_mhz == 80) {
+        /* Otherwise, can use 80MHz
          * CPU frequency when 80MHz APB frequency is requested.
          */
-        apb_max_freq = RTC_CPU_FREQ_80M;
+        apb_max_freq = 80;
     }
 
-    apb_max_freq = MAX(apb_max_freq, min_freq);
+    apb_max_freq = MAX(apb_max_freq, min_freq_mhz);
 
     ESP_LOGI(TAG, "Frequency switching config: "
-                  "CPU_MAX: %s, APB_MAX: %s, APB_MIN: %s, Light sleep: %s",
-                  s_freq_names[max_freq],
-                  s_freq_names[apb_max_freq],
-                  s_freq_names[min_freq],
+                  "CPU_MAX: %d, APB_MAX: %d, APB_MIN: %d, Light sleep: %s",
+                  max_freq_mhz,
+                  apb_max_freq,
+                  min_freq_mhz,
                   config->light_sleep_enable ? "ENABLED" : "DISABLED");
 
     portENTER_CRITICAL(&s_switch_lock);
-    s_cpu_freq_by_mode[PM_MODE_CPU_MAX] = max_freq;
-    s_cpu_freq_by_mode[PM_MODE_APB_MAX] = apb_max_freq;
-    s_cpu_freq_by_mode[PM_MODE_APB_MIN] = min_freq;
-    s_cpu_freq_by_mode[PM_MODE_LIGHT_SLEEP] = min_freq;
+    rtc_clk_cpu_freq_mhz_to_config(max_freq_mhz, &s_cpu_freq_by_mode[PM_MODE_CPU_MAX]);
+    rtc_clk_cpu_freq_mhz_to_config(apb_max_freq, &s_cpu_freq_by_mode[PM_MODE_APB_MAX]);
+    rtc_clk_cpu_freq_mhz_to_config(min_freq_mhz, &s_cpu_freq_by_mode[PM_MODE_APB_MIN]);
+    s_cpu_freq_by_mode[PM_MODE_LIGHT_SLEEP] = s_cpu_freq_by_mode[PM_MODE_APB_MIN];
     s_light_sleep_en = config->light_sleep_enable;
+    s_config_changed = true;
     portEXIT_CRITICAL(&s_switch_lock);
 
     return ESP_OK;
@@ -262,7 +313,7 @@ static void IRAM_ATTR on_freq_update(uint32_t old_ticks_per_us, uint32_t ticks_p
     }
 
     /* Calculate new tick divisor */
-    _xt_tick_divisor = ticks_per_us * 1000000 / XT_TICK_PER_SEC;
+    _xt_tick_divisor = ticks_per_us * MHZ / XT_TICK_PER_SEC;
 
     int core_id = xPortGetCoreID();
     if (s_rtos_lock_handle[core_id] != NULL) {
@@ -323,14 +374,22 @@ static void IRAM_ATTR do_switch(pm_mode_t new_mode)
     } while (true);
     s_new_mode = new_mode;
     s_is_switching = true;
+    bool config_changed = s_config_changed;
+    s_config_changed = false;
     portEXIT_CRITICAL_ISR(&s_switch_lock);
 
-    rtc_cpu_freq_t old_freq = s_cpu_freq_by_mode[s_mode];
-    rtc_cpu_freq_t new_freq = s_cpu_freq_by_mode[new_mode];
+    rtc_cpu_freq_config_t new_config = s_cpu_freq_by_mode[new_mode];
+    rtc_cpu_freq_config_t old_config;
 
-    if (new_freq != old_freq) {
-        uint32_t old_ticks_per_us = g_ticks_per_us_pro;
-        uint32_t new_ticks_per_us = s_cpu_freq_to_ticks[new_freq];
+    if (!config_changed) {
+        old_config = s_cpu_freq_by_mode[s_mode];
+    } else {
+        rtc_clk_cpu_freq_get_config(&old_config);
+    }
+
+    if (new_config.freq_mhz != old_config.freq_mhz) {
+        uint32_t old_ticks_per_us = old_config.freq_mhz;
+        uint32_t new_ticks_per_us = new_config.freq_mhz;
 
         bool switch_down = new_ticks_per_us < old_ticks_per_us;
 
@@ -338,7 +397,7 @@ static void IRAM_ATTR do_switch(pm_mode_t new_mode)
         if (switch_down) {
             on_freq_update(old_ticks_per_us, new_ticks_per_us);
         }
-        rtc_clk_cpu_freq_set_fast(new_freq);
+        rtc_clk_cpu_freq_set_config_fast(&new_config);
         if (!switch_down) {
             on_freq_update(old_ticks_per_us, new_ticks_per_us);
         }
@@ -360,10 +419,9 @@ static void IRAM_ATTR do_switch(pm_mode_t new_mode)
  */
 static void IRAM_ATTR update_ccompare()
 {
-    const uint32_t ccompare_min_cycles_in_future = 1000;
     uint32_t ccount = XTHAL_GET_CCOUNT();
     uint32_t ccompare = XTHAL_GET_CCOMPARE(XT_TIMER_INDEX);
-    if ((ccompare - ccompare_min_cycles_in_future) - ccount < UINT32_MAX / 2) {
+    if ((ccompare - CCOMPARE_MIN_CYCLES_IN_FUTURE) - ccount < UINT32_MAX / 2) {
         uint32_t diff = ccompare - ccount;
         uint32_t diff_scaled = (diff * s_ccount_mul + s_ccount_div - 1) / s_ccount_div;
         if (diff_scaled < _xt_tick_divisor) {
@@ -412,6 +470,96 @@ void IRAM_ATTR esp_pm_impl_isr_hook()
     ESP_PM_TRACE_EXIT(ISR_HOOK, core_id);
 }
 
+void esp_pm_impl_waiti()
+{
+#if CONFIG_FREERTOS_USE_TICKLESS_IDLE
+    int core_id = xPortGetCoreID();
+    if (s_skipped_light_sleep[core_id]) {
+        asm("waiti 0");
+        /* Interrupt took the CPU out of waiti and s_rtos_lock_handle[core_id]
+         * is now taken. However since we are back to idle task, we can release
+         * the lock so that vApplicationSleep can attempt to enter light sleep.
+         */
+        esp_pm_impl_idle_hook();
+        s_skipped_light_sleep[core_id] = false;
+    }
+#else
+    asm("waiti 0");
+#endif // CONFIG_FREERTOS_USE_TICKLESS_IDLE
+}
+
+#if CONFIG_FREERTOS_USE_TICKLESS_IDLE
+
+static inline bool IRAM_ATTR should_skip_light_sleep(int core_id)
+{
+#if portNUM_PROCESSORS == 2
+    if (s_skip_light_sleep[core_id]) {
+        s_skip_light_sleep[core_id] = false;
+        s_skipped_light_sleep[core_id] = true;
+        return true;
+    }
+#endif // portNUM_PROCESSORS == 2
+    if (s_mode != PM_MODE_LIGHT_SLEEP || s_is_switching) {
+        s_skipped_light_sleep[core_id] = true;
+    } else {
+        s_skipped_light_sleep[core_id] = false;
+    }
+    return s_skipped_light_sleep[core_id];
+}
+
+static inline void IRAM_ATTR other_core_should_skip_light_sleep(int core_id)
+{
+#if portNUM_PROCESSORS == 2
+    s_skip_light_sleep[!core_id] = true;
+#endif
+}
+
+void IRAM_ATTR vApplicationSleep( TickType_t xExpectedIdleTime )
+{
+    portENTER_CRITICAL(&s_switch_lock);
+    int core_id = xPortGetCoreID();
+    if (!should_skip_light_sleep(core_id)) {
+        /* Calculate how much we can sleep */
+        int64_t next_esp_timer_alarm = esp_timer_get_next_alarm();
+        int64_t now = esp_timer_get_time();
+        int64_t time_until_next_alarm = next_esp_timer_alarm - now;
+        int64_t wakeup_delay_us = portTICK_PERIOD_MS * 1000LL * xExpectedIdleTime;
+        int64_t sleep_time_us = MIN(wakeup_delay_us, time_until_next_alarm);
+        if (sleep_time_us >= configEXPECTED_IDLE_TIME_BEFORE_SLEEP * portTICK_PERIOD_MS * 1000LL) {
+            esp_sleep_enable_timer_wakeup(sleep_time_us - LIGHT_SLEEP_EARLY_WAKEUP_US);
+#ifdef CONFIG_PM_TRACE
+            /* to force tracing GPIOs to keep state */
+            esp_sleep_pd_config(ESP_PD_DOMAIN_RTC_PERIPH, ESP_PD_OPTION_ON);
+#endif
+            /* Enter sleep */
+            ESP_PM_TRACE_ENTER(SLEEP, core_id);
+            int64_t sleep_start = esp_timer_get_time();
+            esp_light_sleep_start();
+            int64_t slept_us = esp_timer_get_time() - sleep_start;
+            ESP_PM_TRACE_EXIT(SLEEP, core_id);
+
+            uint32_t slept_ticks = slept_us / (portTICK_PERIOD_MS * 1000LL);
+            if (slept_ticks > 0) {
+                /* Adjust RTOS tick count based on the amount of time spent in sleep */
+                vTaskStepTick(slept_ticks);
+
+                /* Trigger tick interrupt, since sleep time was longer
+                 * than portTICK_PERIOD_MS. Note that setting INTSET does not
+                 * work for timer interrupt, and changing CCOMPARE would clear
+                 * the interrupt flag.
+                 */
+                XTHAL_SET_CCOUNT(XTHAL_GET_CCOMPARE(XT_TIMER_INDEX) - 16);
+                while (!(XTHAL_GET_INTERRUPT() & BIT(XT_TIMER_INTNUM))) {
+                    ;
+                }
+            }
+            other_core_should_skip_light_sleep(core_id);
+        }
+    }
+    portEXIT_CRITICAL(&s_switch_lock);
+}
+#endif //CONFIG_FREERTOS_USE_TICKLESS_IDLE
+
 #ifdef WITH_PROFILING
 void esp_pm_impl_dump_stats(FILE* out)
 {
@@ -432,9 +580,9 @@ void esp_pm_impl_dump_stats(FILE* out)
             /* don't display light sleep mode if it's not enabled */
             continue;
         }
-        fprintf(out, "%8s %6s %12lld  %2d%%\n",
+        fprintf(out, "%8s  %3dM %12lld  %2d%%\n",
                 s_mode_names[i],
-                s_freq_names[s_cpu_freq_by_mode[i]],
+                s_cpu_freq_by_mode[i].freq_mhz,
                 time_in_mode[i],
                 (int) (time_in_mode[i] * 100 / now));
     }
@@ -443,7 +591,6 @@ void esp_pm_impl_dump_stats(FILE* out)
 
 void esp_pm_impl_init()
 {
-    s_cpu_freq_to_ticks[RTC_CPU_FREQ_XTAL] = rtc_clk_xtal_freq_get();
 #ifdef CONFIG_PM_TRACE
     esp_pm_trace_init();
 #endif
@@ -459,11 +606,11 @@ void esp_pm_impl_init()
     /* Configure all modes to use the default CPU frequency.
      * This will be modified later by a call to esp_pm_configure.
      */
-    rtc_cpu_freq_t default_freq;
-    if (!rtc_clk_cpu_freq_from_mhz(CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ, &default_freq)) {
+    rtc_cpu_freq_config_t default_config;
+    if (!rtc_clk_cpu_freq_mhz_to_config(CONFIG_ESP32_DEFAULT_CPU_FREQ_MHZ, &default_config)) {
         assert(false && "unsupported frequency");
     }
     for (size_t i = 0; i < PM_MODE_COUNT; ++i) {
-        s_cpu_freq_by_mode[i] = default_freq;
+        s_cpu_freq_by_mode[i] = default_config;
     }
 }

@@ -18,10 +18,26 @@
 #include "esp_wifi_internal.h"
 #include "esp_pm.h"
 #include "soc/rtc.h"
+#include "esp_mesh.h"
+
+/* mesh event callback handler */
+mesh_event_cb_t g_mesh_event_cb = NULL;
 
 #ifdef CONFIG_PM_ENABLE
 static esp_pm_lock_handle_t s_wifi_modem_sleep_lock;
 #endif
+
+/* Callback function to update WiFi MAC time */
+wifi_mac_time_update_cb_t s_wifi_mac_time_update_cb = NULL;
+
+static void __attribute__((constructor)) s_set_default_wifi_log_level()
+{
+    /* WiFi libraries aren't compiled to know CONFIG_LOG_DEFAULT_LEVEL,
+       so set it at runtime startup. Done here not in esp_wifi_init() to allow
+       the user to set the level again before esp_wifi_init() is called.
+    */
+    esp_log_level_set("wifi", CONFIG_LOG_DEFAULT_LEVEL);
+}
 
 esp_err_t esp_wifi_init(const wifi_init_config_t *config)
 {
@@ -35,7 +51,12 @@ esp_err_t esp_wifi_init(const wifi_init_config_t *config)
     }
 #endif
     esp_event_set_default_wifi_handlers();
-    return esp_wifi_init_internal(config);
+    esp_err_t result = esp_wifi_init_internal(config);
+    if (result == ESP_OK) {
+        s_wifi_mac_time_update_cb = esp_wifi_internal_update_mac_time;
+    }
+
+    return result;
 }
 
 #ifdef CONFIG_PM_ENABLE

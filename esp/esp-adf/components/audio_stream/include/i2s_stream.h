@@ -27,7 +27,6 @@
 
 #include "driver/i2s.h"
 #include "audio_common.h"
-#include "board.h"
 #include "audio_error.h"
 
 #ifdef __cplusplus
@@ -41,15 +40,17 @@ extern "C" {
 typedef struct {
     audio_stream_type_t     type;               /*!< Type of stream */
     i2s_config_t            i2s_config;         /*!< I2S driver configurations */
-    i2s_pin_config_t        i2s_pin_config;     /*!< I2S driver hardware pin configurations */
     i2s_port_t              i2s_port;           /*!< I2S driver hardware port */
+    bool                    use_alc;            /*!< It is a flag for ALC. If use ALC, the value is true. Or the value is false */
+    int                     volume;             /*!< The volume of audio input data will be set. */
     int                     out_rb_size;        /*!< Size of output ringbuffer */
     int                     task_stack;         /*!< Task stack size */
     int                     task_core;          /*!< Task running in core (0 or 1) */
     int                     task_prio;          /*!< Task priority (based on freeRTOS priority) */
+    int                     multi_out_num;      /*!< The number of multiple output */
 } i2s_stream_cfg_t;
 
-#define I2S_STREAM_TASK_STACK           (3072)
+#define I2S_STREAM_TASK_STACK           (3072+512)
 #define I2S_STREAM_BUF_SIZE             (2048)
 #define I2S_STREAM_TASK_PRIO            (23)
 #define I2S_STREAM_TASK_CORE            (0)
@@ -57,32 +58,34 @@ typedef struct {
 
 #define I2S_STREAM_CFG_DEFAULT() {                                              \
     .type = AUDIO_STREAM_WRITER,                                                \
+    .task_prio = I2S_STREAM_TASK_PRIO,                                          \
+    .task_core = I2S_STREAM_TASK_CORE,                                          \
+    .task_stack = I2S_STREAM_TASK_STACK,                                        \
+    .out_rb_size = I2S_STREAM_RINGBUFFER_SIZE,                                  \
     .i2s_config = {                                                             \
-        .mode = (i2s_mode_t) (I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX),                    \
+        .mode = I2S_MODE_MASTER | I2S_MODE_TX | I2S_MODE_RX,                    \
         .sample_rate = 44100,                                                   \
-        .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,                                                  \
+        .bits_per_sample = 16,                                                  \
         .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,                           \
         .communication_format = I2S_COMM_FORMAT_I2S,                            \
-        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL2,                               \
         .dma_buf_count = 3,                                                     \
         .dma_buf_len = 300,                                                     \
         .use_apll = 1,                                                          \
+        .intr_alloc_flags = ESP_INTR_FLAG_LEVEL2,                               \
     },                                                                          \
-    .i2s_pin_config = {                                                         \
-        .bck_io_num = IIS_SCLK,                                                 \
-        .ws_io_num = IIS_LCLK,                                                  \
-        .data_out_num = IIS_DSIN,                                               \
-        .data_in_num = IIS_DOUT,                                                \
-    },                                                                          \
-    .i2s_port = I2S_NUM_0,                                                              \
-    .out_rb_size = I2S_STREAM_RINGBUFFER_SIZE,                                  \
-    .task_stack = I2S_STREAM_TASK_STACK,                                        \
-    .task_core = I2S_STREAM_TASK_CORE,                                          \
-    .task_prio = I2S_STREAM_TASK_PRIO,                                          \
+    .i2s_port = 0,                                                              \
+    .use_alc = false,                                                           \
+    .volume = 0,                                                                \
+    .multi_out_num = 0,                                                         \
 }
+
 
 #define I2S_STREAM_INTERNAL_DAC_CFG_DEFAULT() {                                     \
     .type = AUDIO_STREAM_WRITER,                                                    \
+    .task_prio = I2S_STREAM_TASK_PRIO,                                              \
+    .task_core = I2S_STREAM_TASK_CORE,                                              \
+    .task_stack = I2S_STREAM_TASK_STACK,                                            \
+    .out_rb_size = I2S_STREAM_RINGBUFFER_SIZE,                                      \
     .i2s_config = {                                                                 \
         .mode = I2S_MODE_MASTER | I2S_MODE_DAC_BUILT_IN | I2S_MODE_TX,              \
         .sample_rate = 44100,                                                       \
@@ -94,13 +97,16 @@ typedef struct {
         .intr_alloc_flags = ESP_INTR_FLAG_LEVEL2,                                   \
     },                                                                              \
     .i2s_port = 0,                                                                  \
+    .use_alc = false,                                                               \
+    .volume = 0,                                                                    \
+    .multi_out_num = 0,                                                             \
 }
 
 /**
  * @brief      Create a handle to an Audio Element to stream data from I2S to another Element
- *             or get data from other elements sent to I2S, depend on the configuration of stream type
+ *             or get data from other elements sent to I2S, depending on the configuration of stream type
  *             is AUDIO_STREAM_READER or AUDIO_STREAM_WRITER.
- * @note       If I2S stream is enabled with built-in DAC mode, please don't use I2S_NUM_1.The built-in
+ * @note       If I2S stream is enabled with built-in DAC mode, please don't use I2S_NUM_1. The built-in
  *             DAC functions are only supported on I2S0 for the current ESP32 chip.
  * @param      config  The configuration
  *
@@ -121,6 +127,30 @@ audio_element_handle_t i2s_stream_init(i2s_stream_cfg_t *config);
  *     - ESP_FAIL
  */
 esp_err_t i2s_stream_set_clk(audio_element_handle_t i2s_stream, int rate, int bits, int ch);
+
+/**
+ * @brief      Setup volume of stream by using ALC
+ *
+ * @param[in]  i2s_stream   The i2s element handle
+ * @param[in]  volume       The volume of stream will be set.
+ * 
+ * @return
+ *     - ESP_OK
+ *     - ESP_FAIL
+ */
+esp_err_t i2s_alc_volume_set(audio_element_handle_t i2s_stream, int volume);
+
+/**
+ * @brief      Get volume of stream
+ *
+ * @param[in]  i2s_stream   The i2s element handle
+ * @param[in]  volume       The volume of stream
+ *
+ * @return
+ *     - ESP_OK  
+ *     - ESP_FAIL  
+ */
+esp_err_t i2s_alc_volume_get(audio_element_handle_t i2s_stream, int* volume);
 
 #ifdef __cplusplus
 }

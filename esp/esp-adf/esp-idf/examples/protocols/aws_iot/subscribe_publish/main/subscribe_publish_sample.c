@@ -205,7 +205,7 @@ void aws_iot_task(void *param) {
     sdmmc_card_t* card;
     esp_err_t ret = esp_vfs_fat_sdmmc_mount("/sdcard", &host, &slot_config, &mount_config, &card);
     if (ret != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to mount SD card VFAT filesystem.");
+        ESP_LOGE(TAG, "Failed to mount SD card VFAT filesystem. Error: %s", esp_err_to_name(ret));
         abort();
     }
 #endif
@@ -277,7 +277,7 @@ void aws_iot_task(void *param) {
             continue;
         }
 
-        ESP_LOGI(TAG, "-->sleep");
+        ESP_LOGI(TAG, "Stack remaining for task '%s' is %d bytes", pcTaskGetTaskName(NULL), uxTaskGetStackHighWaterMark(NULL));
         vTaskDelay(1000 / portTICK_RATE_MS);
         sprintf(cPayload, "%s : %d ", "hello from ESP32 (QOS0)", i++);
         paramsQOS0.payloadLen = strlen(cPayload);
@@ -321,17 +321,12 @@ void app_main()
 {
     // Initialize NVS.
     esp_err_t err = nvs_flash_init();
-    if (err == ESP_ERR_NVS_NO_FREE_PAGES) {
+    if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         err = nvs_flash_init();
     }
     ESP_ERROR_CHECK( err );
 
     initialise_wifi();
-#ifdef CONFIG_MBEDTLS_DEBUG
-    const size_t stack_size = 36*1024;
-#else
-    const size_t stack_size = 36*1024;
-#endif
-    xTaskCreatePinnedToCore(&aws_iot_task, "aws_iot_task", stack_size, NULL, 5, NULL, 1);
+    xTaskCreatePinnedToCore(&aws_iot_task, "aws_iot_task", 9216, NULL, 5, NULL, 1);
 }

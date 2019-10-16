@@ -47,7 +47,7 @@ COMPONENT_ADD_INCLUDEDIRS = include
 COMPONENT_ADD_LDFLAGS = -l$(COMPONENT_NAME)
 
 # Define optional compiling macros
-define compile_exclude 
+define compile_exclude
 COMPONENT_OBJEXCLUDE += $(1)
 endef
 
@@ -59,7 +59,7 @@ define compile_only_if
 $(eval $(if $(1), $(call compile_include, $(2)), $(call compile_exclude, $(2))))
 endef
 
-define compile_only_if_not 
+define compile_only_if_not
 $(eval $(if $(1), $(call compile_exclude, $(2)), $(call compile_include, $(2))))
 endef
 
@@ -82,7 +82,7 @@ COMPONENT_SUBMODULES ?=
 # configuration at the global component level
 
 # Save component_path; we pass it to the called Makefile.componentbuild
-# as COMPILING_COMPONENT_PATH, and we use it to restore the current 
+# as COMPILING_COMPONENT_PATH, and we use it to restore the current
 # COMPONENT_PATH later.
 COMPILING_COMPONENT_PATH := $(COMPONENT_PATH)
 
@@ -123,12 +123,20 @@ else
 # Add in components defined by conditional compiling macros
 COMPONENT_OBJS += $(COMPONENT_OBJINCLUDE)
 endif
+# Remove any leading ../ from paths, so everything builds inside build dir
+COMPONENT_OBJS := $(call stripLeadingParentDirs,$(COMPONENT_OBJS))
+
+# Do the same for COMPONENT_OBJEXCLUDE (used below)
+COMPONENT_OBJEXCLUDE := $(call stripLeadingParentDirs,$(COMPONENT_OBJEXCLUDE))
+
+# COMPONENT_OBJDIRS is COMPONENT_SRCDIRS with the same transform applied
+COMPONENT_OBJDIRS := $(call stripLeadingParentDirs,$(COMPONENT_SRCDIRS))
+
 # Remove items disabled by optional compilation
-COMPONENT_OBJS := $(foreach obj,$(COMPONENT_OBJS),$(if $(filter $(realpath $(obj)),$(realpath $(COMPONENT_OBJEXCLUDE))), ,$(obj)))
+COMPONENT_OBJS := $(foreach obj,$(COMPONENT_OBJS),$(if $(filter $(abspath $(obj)),$(abspath $(COMPONENT_OBJEXCLUDE))), ,$(obj)))
 
 # Remove duplicates
 COMPONENT_OBJS := $(call uniq,$(COMPONENT_OBJS))
-
 
 # Object files with embedded binaries to add to the component library
 # Correspond to the files named in COMPONENT_EMBED_FILES & COMPONENT_EMBED_TXTFILES
@@ -180,10 +188,10 @@ endef
 component_project_vars.mk::
 	$(details) "Building component project variables list $(abspath $@)"
 	@echo '# Automatically generated build file. Do not edit.' > $@
-	@echo 'COMPONENT_INCLUDES += $(call MakeVariablePath,$(addprefix $(COMPONENT_PATH)/,$(COMPONENT_ADD_INCLUDEDIRS)))' >> $@
+	@echo 'COMPONENT_INCLUDES += $(call MakeVariablePath,$(abspath $(addprefix $(COMPONENT_PATH)/,$(COMPONENT_ADD_INCLUDEDIRS))))' >> $@
 	@echo 'COMPONENT_LDFLAGS += $(call MakeVariablePath,-L$(COMPONENT_BUILD_DIR) $(COMPONENT_ADD_LDFLAGS))' >> $@
 	@echo 'COMPONENT_LINKER_DEPS += $(call MakeVariablePath,$(call resolvepath,$(COMPONENT_ADD_LINKER_DEPS),$(COMPONENT_PATH)))' >> $@
-	@echo 'COMPONENT_SUBMODULES += $(call MakeVariablePath,$(addprefix $(COMPONENT_PATH)/,$(COMPONENT_SUBMODULES)))' >> $@
+	@echo 'COMPONENT_SUBMODULES += $(call MakeVariablePath,$(abspath $(addprefix $(COMPONENT_PATH)/,$(COMPONENT_SUBMODULES))))' >> $@
 	@echo 'COMPONENT_LIBRARIES += $(COMPONENT_NAME)' >> $@
 	@echo 'component-$(COMPONENT_NAME)-build: $(addprefix component-,$(addsuffix -build,$(COMPONENT_DEPENDS)))' >> $@
 
@@ -204,7 +212,7 @@ build: $(COMPONENT_LIBRARY)
 $(COMPONENT_LIBRARY): $(COMPONENT_OBJS) $(COMPONENT_EMBED_OBJS)
 	$(summary) AR $(patsubst $(PWD)/%,%,$(CURDIR))/$@
 	rm -f $@
-	$(AR) cru $@ $^
+	$(AR) $(ARFLAGS) $@ $^
 endif
 
 # If COMPONENT_OWNCLEANTARGET is not set, define a phony clean target
@@ -236,41 +244,45 @@ endef
 # This pattern is generated for each COMPONENT_SRCDIR to compile the files in it.
 define GenerateCompileTargets
 # $(1) - directory containing source files, relative to $(COMPONENT_PATH) - one of $(COMPONENT_SRCDIRS)
+# $(2) - output build directory, which is $(1) with any leading ".."s converted to "."s to ensure output is always under build/
 #
-$(1)/%.o: $$(COMPONENT_PATH)/$(1)/%.c $(COMMON_MAKEFILES) $(COMPONENT_MAKEFILE) | $(COMPONENT_SRCDIRS)
+
+$(2)/%.o: $$(COMPONENT_PATH)/$(1)/%.c $(COMMON_MAKEFILES) $(COMPONENT_MAKEFILE) | $(COMPONENT_OBJDIRS)
 	$$(summary) CC $$(patsubst $$(PWD)/%,%,$$(CURDIR))/$$@
-	$$(CC) $$(CFLAGS) $$(CPPFLAGS) $$(addprefix -I ,$$(COMPONENT_INCLUDES)) $$(addprefix -I ,$$(COMPONENT_EXTRA_INCLUDES)) -I$(1) -c $$< -o $$@
+	$$(CC) $$(CFLAGS) $$(CPPFLAGS) $$(addprefix -I ,$$(COMPONENT_INCLUDES)) $$(addprefix -I ,$$(COMPONENT_EXTRA_INCLUDES)) -I $(1) -c $$(abspath $$<) -o $$@
 	$(call AppendSourceToDependencies,$$<,$$@)
 
-$(1)/%.o: $$(COMPONENT_PATH)/$(1)/%.cpp $(COMMON_MAKEFILES) $(COMPONENT_MAKEFILE) | $(COMPONENT_SRCDIRS)
+$(2)/%.o: $$(COMPONENT_PATH)/$(1)/%.cpp $(COMMON_MAKEFILES) $(COMPONENT_MAKEFILE) | $(COMPONENT_OBJDIRS)
 	$$(summary) CXX $$(patsubst $$(PWD)/%,%,$$(CURDIR))/$$@
-	$$(CXX) $$(CXXFLAGS) $$(CPPFLAGS) $$(addprefix -I,$$(COMPONENT_INCLUDES)) $$(addprefix -I,$$(COMPONENT_EXTRA_INCLUDES)) -I$(1) -c $$< -o $$@
+	$$(CXX) $$(CXXFLAGS) $$(CPPFLAGS) $$(addprefix -I ,$$(COMPONENT_INCLUDES)) $$(addprefix -I ,$$(COMPONENT_EXTRA_INCLUDES)) -I $(1) -c $$(abspath $$<) -o $$@
 	$(call AppendSourceToDependencies,$$<,$$@)
 
-$(1)/%.o: $$(COMPONENT_PATH)/$(1)/%.cc $(COMMON_MAKEFILES) $(COMPONENT_MAKEFILE) | $(COMPONENT_SRCDIRS)
+$(2)/%.o: $$(COMPONENT_PATH)/$(1)/%.cc $(COMMON_MAKEFILES) $(COMPONENT_MAKEFILE) | $(COMPONENT_OBJDIRS)
 	$$(summary) CXX $$(patsubst $$(PWD)/%,%,$$(CURDIR))/$$@
-	$$(CXX) $$(CXXFLAGS) $$(CPPFLAGS) $$(addprefix -I,$$(COMPONENT_INCLUDES)) $$(addprefix -I,$$(COMPONENT_EXTRA_INCLUDES)) -I$(1) -c $$< -o $$@
+	$$(CXX) $$(CXXFLAGS) $$(CPPFLAGS) $$(addprefix -I ,$$(COMPONENT_INCLUDES)) $$(addprefix -I ,$$(COMPONENT_EXTRA_INCLUDES)) -I $(1) -c $$(abspath $$<) -o $$@
 	$(call AppendSourceToDependencies,$$<,$$@)
 
-$(1)/%.o: $$(COMPONENT_PATH)/$(1)/%.S $(COMMON_MAKEFILES) $(COMPONENT_MAKEFILE) | $(COMPONENT_SRCDIRS)
+$(2)/%.o: $$(COMPONENT_PATH)/$(1)/%.S $(COMMON_MAKEFILES) $(COMPONENT_MAKEFILE) | $(COMPONENT_OBJDIRS)
 	$$(summary) AS $$(patsubst $$(PWD)/%,%,$$(CURDIR))/$$@
-	$$(CC) $$(CPPFLAGS) $$(DEBUG_FLAGS) $$(addprefix -I ,$$(COMPONENT_INCLUDES)) $$(addprefix -I ,$$(COMPONENT_EXTRA_INCLUDES)) -I$(1) -c $$< -o $$@
+	$$(CC) $$(CPPFLAGS) $$(DEBUG_FLAGS) $$(addprefix -I ,$$(COMPONENT_INCLUDES)) $$(addprefix -I ,$$(COMPONENT_EXTRA_INCLUDES)) -I $(1) -c $$(abspath $$<) -o $$@
 	$(call AppendSourceToDependencies,$$<,$$@)
 
 # CWD is build dir, create the build subdirectory if it doesn't exist
 #
-# (NB: Each .o file depends on all relative component build dirs $(COMPONENT_SRCDIRS), rather than just $(1), to work
+# (NB: Each .o file depends on all relative component build dirs $(COMPONENT_OBJDIRS), including $(2), to work
 # around a behaviour make 3.81 where the first pattern (randomly) seems to be matched rather than the best fit. ie if
 # you have objects a/y.o and a/b/c.o then c.o can be matched with $(1)=a & %=b/c, meaning that subdir 'a/b' needs to be
-# created but wouldn't be created if $(1)=a. Make 4.x doesn't have this problem, it seems to preferentially
-# choose the better match ie $(1)=a/b and %=c )
+# created but wouldn't be created if $(2)=a. Make 4.x doesn't have this problem, it seems to preferentially
+# choose the better match ie $(2)=a/b and %=c )
 #
-$(1):
-	mkdir -p $(1)
+# Note: This may cause some issues for out-of-tree source files and make 3.81 :/
+#
+$(2):
+	mkdir -p $(2)
 endef
 
 # Generate all the compile target patterns
-$(foreach srcdir,$(COMPONENT_SRCDIRS), $(eval $(call GenerateCompileTargets,$(srcdir))))
+$(foreach srcdir,$(COMPONENT_SRCDIRS), $(eval $(call GenerateCompileTargets,$(srcdir),$(call stripLeadingParentDirs,$(srcdir)))))
 
 ## Support for embedding binary files into the ELF as symbols
 

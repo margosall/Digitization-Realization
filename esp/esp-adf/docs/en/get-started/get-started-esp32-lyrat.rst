@@ -3,7 +3,9 @@ ESP32-LyraT V4.3 Getting Started Guide
 
 This guide provides users with functional descriptions, configuration options for ESP32-LyraT V4.3 audio development board, as well as how to get started with the ESP32-LyraT board. Check section `Other Versions of LyraT`_, if you have different version of this board.
 
-The ESP32-LyraT is a hardware platform designed for the dual-core ESP32 audio applications, e.g., Wi-Fi or BT audio speakers, speech-based remote controllers, smart-home appliances with audio functionality(ies), etc.
+The ESP32-LyraT is a hardware platform designed for the dual-core ESP32 audio applications, e.g., Wi-Fi or BT audio speakers, speech-based remote controllers, connected smart-home appliances with one or more audio functionality, etc. 
+
+The ESP32-LyraT is a stereo audio board. If you are looking for a mono audio board, intended for lower end applications, check :doc:`get-started-esp32-lyrat-mini`.
 
 
 What You Need
@@ -71,7 +73,7 @@ Left Speaker Output
 Right Speaker Output
     Output socket to connect 4 ohm speaker. The pins have a standard 2.54 mm / 0.1" pitch.
 Boot/Reset Press Keys
-    Boot button: holding down the **Boot** button and momentarily pressing the **Reset** button to initiate the firmware upload mode. Then you can upload firmware through the serial port. Reset button: pressing this button alone resets the system.
+    Boot: holding down the **Boot** button and momentarily pressing the **Reset** button initiates the firmware upload mode. Then user can upload firmware through the serial port. Reset: pressing this button alone resets the system.
 Audio Codec Chip
     The Audio Codec Chip, `ES8388 <http://www.everest-semi.com/pdf/ES8388%20DS.pdf>`_, is a low power stereo audio codec with a headphone amplifier. It consists of 2-channel ADC, 2-channel DAC, microphone amplifier, headphone amplifier, digital sound effects, analog mixing and gain functions. It is interfaced with **ESP32-WROVER Module** over I2S and I2S buses to provide audio processing in hardware independently from the audio application.
 USB-UART Port
@@ -135,14 +137,21 @@ Other Versions of LyraT
 * :doc:`get-started-esp32-lyrat-v4.2`
 * :doc:`get-started-esp32-lyrat-v4`
 
+Other Boards from LyraT Family
+------------------------------
+
+* :doc:`get-started-esp32-lyrat-mini`
+* :doc:`get-started-esp32-lyratd-msc`
 
 Related Documents
 -----------------
 
 * :doc:`../design-guide/board-esp32-lyrat-v4.3`
 * `ESP32 LyraT V4.3 schematic`_ (PDF)
+* `ESP32-LyraT V4.3 Component Layout`_ (PDF)
 * `ESP32 Datasheet <https://www.espressif.com/sites/default/files/documentation/esp32_datasheet_en.pdf>`_ (PDF)
 * `ESP32-WROVER Datasheet <https://espressif.com/sites/default/files/documentation/esp32-wrover_datasheet_en.pdf>`_ (PDF)
 
 
 .. _ESP32 LyraT V4.3 schematic: https://dl.espressif.com/dl/schematics/esp32-lyrat-v4.3-schematic.pdf
+.. _ESP32-LyraT V4.3 Component Layout: https://dl.espressif.com/dl/schematics/ESP32-LyraT_v4.3_component_layout.pdf

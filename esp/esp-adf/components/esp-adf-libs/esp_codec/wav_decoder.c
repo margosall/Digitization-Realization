@@ -39,6 +39,7 @@ static esp_err_t _wav_decoder_close(audio_element_handle_t self)
 {
     ESP_LOGD(TAG, "_wav_decoder_close");
     if (AEL_STATE_PAUSED != audio_element_get_state(self)) {
+        audio_element_report_pos(self);
         audio_element_info_t info = {0};
         audio_element_getinfo(self, &info);
         info.byte_pos = 0;
@@ -81,9 +82,15 @@ static int _wav_decoder_process(audio_element_handle_t self, char *in_buffer, in
             }
             return r_size;
         }
-        out_len = audio_element_output(self, in_buffer, r_size);
+        if (audio_info.byte_pos + r_size >= audio_info.total_bytes) {
+            out_len = audio_info.total_bytes - audio_info.byte_pos;
+        }
+        out_len = audio_element_output(self, in_buffer, out_len);
         audio_info.byte_pos += out_len;
         audio_element_setinfo(self, &audio_info);
+    }
+    if (out_len != r_size) {
+        return ESP_OK;
     }
     return out_len;
 }

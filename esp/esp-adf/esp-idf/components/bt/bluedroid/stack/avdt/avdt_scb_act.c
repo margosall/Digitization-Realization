@@ -24,14 +24,14 @@
  ******************************************************************************/
 
 #include <string.h>
-#include "bt_types.h"
-#include "bt_target.h"
-#include "bt_utils.h"
-#include "avdt_api.h"
-#include "avdtc_api.h"
+#include "stack/bt_types.h"
+#include "common/bt_target.h"
+#include "common/bt_defs.h"
+#include "stack/avdt_api.h"
+#include "stack/avdtc_api.h"
 #include "avdt_int.h"
-#include "btu.h"
-#include "allocator.h"
+#include "stack/btu.h"
+#include "osi/allocator.h"
 
 #if (defined(AVDT_INCLUDED) && AVDT_INCLUDED == TRUE)
 
@@ -345,8 +345,10 @@ UINT8 *avdt_scb_hdl_report(tAVDT_SCB *p_scb, UINT8 *p, UINT16 len)
         p += 2;
         BE_STREAM_TO_UINT32(ssrc, p);
 
+        UNUSED(ssrc);
         UNUSED(o_p);
         UNUSED(o_v);
+        UNUSED(o_cc);
 
         switch (pt) {
         case AVDT_RTCP_PT_SR:   /* the packet type - SR (Sender Report) */
@@ -627,15 +629,19 @@ void avdt_scb_hdl_pkt(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
         avdt_scb_hdl_pkt_frag(p_scb, p_data);
     } else
 #endif
+    {
 #if AVDT_REPORTING == TRUE
         if (p_data->p_pkt->layer_specific == AVDT_CHAN_REPORT) {
             p = (UINT8 *)(p_data->p_pkt + 1) + p_data->p_pkt->offset;
             avdt_scb_hdl_report(p_scb, p, p_data->p_pkt->len);
-        osi_free(p_data->p_pkt);
-        p_data->p_pkt = NULL;
+            osi_free(p_data->p_pkt);
+            p_data->p_pkt = NULL;
         } else
 #endif
+        {
             avdt_scb_hdl_pkt_no_frag(p_scb, p_data);
+        }
+    }
 }
 
 /*******************************************************************************
@@ -1303,7 +1309,9 @@ void avdt_scb_hdl_write_req(tAVDT_SCB *p_scb, tAVDT_SCB_EVT *p_data)
 #if AVDT_MULTIPLEXING == TRUE
     if (fixed_queue_is_empty(p_scb->frag_q))
 #endif
+    {
         avdt_scb_hdl_write_req_no_frag(p_scb, p_data);
+    }
 #if AVDT_MULTIPLEXING == TRUE
     else {
         avdt_scb_hdl_write_req_frag(p_scb, p_data);

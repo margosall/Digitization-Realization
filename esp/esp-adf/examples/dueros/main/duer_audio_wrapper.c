@@ -36,7 +36,7 @@
 
 #include "audio_element.h"
 #include "audio_mem.h"
-#include "audio_hal.h"
+#include "board.h"
 #include "audio_common.h"
 
 #include "fatfs_stream.h"
@@ -61,8 +61,9 @@ static void esp_audio_state_task (void *para)
     esp_audio_state_t esp_state = {0};
     while (1) {
         xQueueReceive(que, &esp_state, portMAX_DELAY);
-        ESP_LOGI(TAG, "esp_auido status:%x,err:%x", esp_state.status, esp_state.err_msg);
-        if ((esp_state.status == AUDIO_STATUS_STOPED)
+        ESP_LOGI(TAG, "esp_auido status:%x,err:%x,state:%d", esp_state.status, esp_state.err_msg, duer_playing_type);
+        if ((esp_state.status == AUDIO_STATUS_STOPPED)
+            || (esp_state.status == AUDIO_STATUS_FINISHED)
             || (esp_state.status == AUDIO_STATUS_ERROR)) {
             if (duer_playing_type == DUER_AUDIO_TYPE_SPEECH) {
                 duer_playing_type = DUER_AUDIO_TYPE_UNKOWN;
@@ -99,30 +100,24 @@ static void setup_player(void)
     if (player) {
         return ;
     }
-    esp_audio_cfg_t cfg = {
-        .in_stream_buf_size = 20 * 1024,
-        .out_stream_buf_size = 4096,
-        .evt_que = NULL,
-        .resample_rate = 48000,
-        .hal = NULL,
-        .task_prio = 5,
-    };
-    audio_hal_codec_config_t audio_hal_codec_cfg =  AUDIO_HAL_ES8388_DEFAULT();
-    cfg.hal = audio_hal_init(&audio_hal_codec_cfg, 0);
+
+    esp_audio_cfg_t cfg = DEFAULT_ESP_AUDIO_CONFIG();
+    audio_board_handle_t board_handle = audio_board_init();
+    cfg.vol_handle = board_handle->audio_hal;
+    cfg.vol_set = (audio_volume_set)audio_hal_set_volume;
+    cfg.vol_get = (audio_volume_get)audio_hal_get_volume;
+    cfg.resample_rate = 48000;
+    cfg.prefer_type = ESP_AUDIO_PREFER_MEM;
     cfg.evt_que = xQueueCreate(3, sizeof(esp_audio_state_t));
-    audio_hal_ctrl_codec(cfg.hal, AUDIO_HAL_CODEC_MODE_DECODE, AUDIO_HAL_CTRL_START);
     player = esp_audio_create(&cfg);
+    audio_hal_ctrl_codec(board_handle->audio_hal, AUDIO_HAL_CODEC_MODE_BOTH, AUDIO_HAL_CTRL_START);
     xTaskCreate(esp_audio_state_task, "player_task", 3 * 1024, cfg.evt_que, 1, NULL);
 
     // Create readers and add to esp_audio
-    fatfs_stream_cfg_t fs_reader = {
-        .type = AUDIO_STREAM_READER,
-    };
-    i2s_stream_cfg_t i2s_reader = I2S_STREAM_CFG_DEFAULT();
-    i2s_reader.type = AUDIO_STREAM_READER;
+    fatfs_stream_cfg_t fs_reader = FATFS_STREAM_CFG_DEFAULT();
+    fs_reader.type = AUDIO_STREAM_READER;
 
     esp_audio_input_stream_add(player, fatfs_stream_init(&fs_reader));
-    esp_audio_input_stream_add(player, i2s_stream_init(&i2s_reader));
     http_stream_cfg_t http_cfg = HTTP_STREAM_CFG_DEFAULT();
     http_cfg.event_handle = _http_stream_event_handle;
     http_cfg.type = AUDIO_STREAM_READER;
@@ -131,14 +126,11 @@ static void setup_player(void)
     esp_audio_input_stream_add(player, http_stream_reader);
 
     // Create writers and add to esp_audio
-    fatfs_stream_cfg_t fs_writer = {
-        .type = AUDIO_STREAM_WRITER,
-    };
     i2s_stream_cfg_t i2s_writer = I2S_STREAM_CFG_DEFAULT();
+    i2s_writer.i2s_config.sample_rate = 48000;
     i2s_writer.type = AUDIO_STREAM_WRITER;
 
     esp_audio_output_stream_add(player, i2s_stream_init(&i2s_writer));
-    esp_audio_output_stream_add(player, fatfs_stream_init(&fs_writer));
 
     // Add decoders and encoders to esp_audio
     wav_decoder_cfg_t wav_dec_cfg = DEFAULT_WAV_DECODER_CONFIG();
@@ -158,28 +150,15 @@ static void setup_player(void)
     audio_element_set_tag(ts_dec_cfg, "ts");
     esp_audio_codec_lib_add(player, AUDIO_CODEC_TYPE_DECODER, ts_dec_cfg);
 
-
-    wav_encoder_cfg_t wav_enc_cfg = DEFAULT_WAV_ENCODER_CONFIG();
-    esp_audio_codec_lib_add(player, AUDIO_CODEC_TYPE_ENCODER, wav_encoder_init(&wav_enc_cfg));
-
     // Set default volume
     esp_audio_vol_set(player, 45);
     AUDIO_MEM_SHOW(TAG);
     ESP_LOGI(TAG, "esp_audio instance is:%p", player);
 }
 
-void duer_dcs_init(void)
+void duer_audio_wrapper_init(void)
 {
-    static bool is_first_time = true;
-
-    ESP_LOGI(TAG, "duer_dcs_init");
     setup_player();
-    duer_dcs_framework_init();
-    duer_dcs_voice_input_init();
-    duer_dcs_voice_output_init();
-    duer_dcs_speaker_control_init();
-    duer_dcs_audio_player_init();
-
     if (s_mutex == NULL) {
         s_mutex = xSemaphoreCreateMutex();
         if (s_mutex == NULL) {
@@ -188,11 +167,22 @@ void duer_dcs_init(void)
             ESP_LOGD(TAG, "Create mutex success");
         }
     }
+}
 
-    if (is_first_time) {
-        is_first_time = false;
-        duer_dcs_sync_state();
+void duer_audio_wrapper_pause()
+{
+    if (duer_playing_type == DUER_AUDIO_TYPE_SPEECH) {
+        esp_audio_stop(player, 0);
+    } else {
+        ESP_LOGW(TAG, "duer_audio_wrapper_pause, type is music");
     }
+}
+
+int duer_audio_wrapper_get_state()
+{
+    esp_audio_state_t st = {0};
+    esp_audio_state_get(player, &st);
+    return st.status;
 }
 
 void duer_dcs_listen_handler(void)
@@ -230,7 +220,7 @@ void duer_dcs_volume_adjust_handler(int volume)
     }
 }
 
-void duer_dcs_mute_handler(bool is_mute)
+void duer_dcs_mute_handler(duer_bool is_mute)
 {
     ESP_LOGI(TAG, "set_mute to  %d", (int)is_mute);
     int ret = 0;
@@ -243,7 +233,7 @@ void duer_dcs_mute_handler(bool is_mute)
     }
 }
 
-void duer_dcs_get_speaker_state(int *volume, bool *is_mute)
+void duer_dcs_get_speaker_state(int *volume, duer_bool *is_mute)
 {
     ESP_LOGI(TAG, "duer_dcs_get_speaker_state");
     *volume = 60;
@@ -272,14 +262,15 @@ void duer_dcs_speak_handler(const char *url)
     xSemaphoreGive(s_mutex);
 }
 
-void duer_dcs_audio_play_handler(const char *url,  const int offset)
+void duer_dcs_audio_play_handler(const duer_dcs_audio_info_t *audio_info)
 {
-    ESP_LOGI(TAG, "Playing audio offset:%d url:%s", offset, url);
-    esp_audio_play(player, AUDIO_CODEC_TYPE_DECODER, url, offset);
+    ESP_LOGI(TAG, "Playing audio, offset:%d url:%s", audio_info->offset, audio_info->url);
+    esp_audio_play(player, AUDIO_CODEC_TYPE_DECODER, audio_info->url, audio_info->offset);
     xSemaphoreTake(s_mutex, portMAX_DELAY);
     duer_playing_type = DUER_AUDIO_TYPE_MUSIC;
     player_pause = 0;
     xSemaphoreGive(s_mutex);
+
 }
 
 void duer_dcs_audio_stop_handler()
@@ -303,11 +294,11 @@ void duer_dcs_audio_pause_handler()
     esp_audio_stop(player, 0);
 }
 
-void duer_dcs_audio_resume_handler(const char *url, const int offset)
+void duer_dcs_audio_resume_handler(const duer_dcs_audio_info_t *audio_info)
 {
-    ESP_LOGI(TAG, "Resume audio play,offset:%d, url:%s,", offset, url);
+    ESP_LOGI(TAG, "Resume audio, offset:%d url:%s", audio_info->offset, audio_info->url);
     player_pause = 0;
-    esp_audio_play(player, AUDIO_CODEC_TYPE_DECODER, url, audio_pos);
+    esp_audio_play(player, AUDIO_CODEC_TYPE_DECODER, audio_info->url, audio_pos);
 }
 
 int duer_dcs_audio_get_play_progress()

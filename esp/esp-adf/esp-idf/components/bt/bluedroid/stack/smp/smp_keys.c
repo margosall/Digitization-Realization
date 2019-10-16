@@ -21,7 +21,7 @@
  *  This file contains security manager protocol utility functions
  *
  ******************************************************************************/
-#include "bt_target.h"
+#include "common/bt_target.h"
 
 #if SMP_INCLUDED == TRUE
 #if SMP_DEBUG == TRUE
@@ -29,14 +29,14 @@
 #endif
 #include <string.h>
 //#include "bt_utils.h"
-#include "btm_ble_api.h"
+#include "stack/btm_ble_api.h"
 #include "smp_int.h"
 #include "btm_int.h"
 #include "btm_ble_int.h"
-#include "hcimsgs.h"
+#include "stack/hcimsgs.h"
 #include "aes.h"
 #include "p_256_ecc_pp.h"
-#include "controller.h"
+#include "device/controller.h"
 
 #ifndef SMP_MAX_ENC_REPEAT
 #define SMP_MAX_ENC_REPEAT  3
@@ -70,8 +70,6 @@ static const tSMP_ACT smp_encrypt_action[] = {
     smp_generate_srand_mrand_confirm, /* SMP_GEN_SRAND_MRAND */
     smp_generate_rand_cont         /* SMP_GEN_SRAND_MRAND_CONT */
 };
-
-#define SMP_PASSKEY_MASK    0xfff00000
 
 void smp_debug_print_nbyte_little_endian(UINT8 *p, const UINT8 *key_name, UINT8 len)
 {
@@ -186,6 +184,29 @@ BOOLEAN smp_encrypt_data (UINT8 *key, UINT8 key_len,
     return TRUE;
 }
 
+void smp_use_static_passkey(void)
+{
+    tSMP_CB *p_cb = &smp_cb;
+    UINT8   *tt = p_cb->tk;
+    tSMP_KEY    key;
+    UINT32  passkey = p_cb->static_passkey;
+    /* save the TK */
+    memset(p_cb->tk, 0, BT_OCTET16_LEN);
+    UINT32_TO_STREAM(tt, passkey);
+
+    key.key_type = SMP_KEY_TYPE_TK;
+    key.p_data  = p_cb->tk;
+
+    if (p_cb->p_callback) {
+        (*p_cb->p_callback)(SMP_PASSKEY_NOTIF_EVT, p_cb->pairing_bda, (tSMP_EVT_DATA *)&passkey);
+    }
+
+    if (p_cb->selected_association_model == SMP_MODEL_SEC_CONN_PASSKEY_DISP) {
+        smp_sm_event(&smp_cb, SMP_KEY_READY_EVT, &passkey);
+    } else {
+        smp_sm_event(p_cb, SMP_KEY_READY_EVT, (tSMP_INT_DATA *)&key);
+    }
+}
 /*******************************************************************************
 **
 ** Function         smp_generate_passkey
@@ -199,7 +220,12 @@ void smp_generate_passkey(tSMP_CB *p_cb, tSMP_INT_DATA *p_data)
 {
     UNUSED(p_data);
 
-    SMP_TRACE_DEBUG ("%s", __func__);
+    if(p_cb->use_static_passkey) {
+        SMP_TRACE_DEBUG ("%s use static passkey %6d", __func__, p_cb->static_passkey);
+        smp_use_static_passkey();
+        return;
+    }
+    SMP_TRACE_DEBUG ("%s generate rand passkey", __func__);
     p_cb->rand_enc_proc_state = SMP_GEN_TK;
 
     /* generate MRand or SRand */
@@ -1125,9 +1151,10 @@ void smp_calculate_local_commitment(tSMP_CB *p_cb)
     switch (p_cb->selected_association_model) {
     case SMP_MODEL_SEC_CONN_JUSTWORKS:
     case SMP_MODEL_SEC_CONN_NUM_COMP:
-        if (p_cb->role  == HCI_ROLE_MASTER)
+        if (p_cb->role  == HCI_ROLE_MASTER) {
             SMP_TRACE_WARNING ("local commitment calc on master is not expected \
                                     for Just Works/Numeric Comparison models\n");
+        }
         smp_calculate_f4(p_cb->loc_publ_key.x, p_cb->peer_publ_key.x, p_cb->rand, 0,
                          p_cb->commitment);
         break;
@@ -1170,9 +1197,10 @@ void smp_calculate_peer_commitment(tSMP_CB *p_cb, BT_OCTET16 output_buf)
     switch (p_cb->selected_association_model) {
     case SMP_MODEL_SEC_CONN_JUSTWORKS:
     case SMP_MODEL_SEC_CONN_NUM_COMP:
-        if (p_cb->role  == HCI_ROLE_SLAVE)
+        if (p_cb->role  == HCI_ROLE_SLAVE) {
             SMP_TRACE_WARNING ("peer commitment calc on slave is not expected \
                 for Just Works/Numeric Comparison models\n");
+        }
         smp_calculate_f4(p_cb->peer_publ_key.x, p_cb->loc_publ_key.x, p_cb->rrand, 0,
                          output_buf);
         break;

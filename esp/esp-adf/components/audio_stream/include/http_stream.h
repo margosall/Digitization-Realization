@@ -81,7 +81,9 @@ typedef struct {
     int                         task_prio;              /*!< Task priority (based on freeRTOS priority) */
     http_stream_event_handle_t  event_handle;           /*!< The hook function for HTTP Stream */
     void                        *user_data;             /*!< User data context */
+    bool                        auto_connect_next_track;/*!< connect next track without open/close */
     bool                        enable_playlist_parser; /*!< Enable playlist parser*/
+    int                         multi_out_num;          /*!< The number of multiple output */
 } http_stream_cfg_t;
 
 
@@ -96,6 +98,7 @@ typedef struct {
     .task_core = HTTP_STREAM_TASK_CORE, \
     .task_stack = HTTP_STREAM_TASK_STACK, \
     .out_rb_size = HTTP_STREAM_RINGBUFFER_SIZE, \
+    .multi_out_num = 0, \
 }
 
 /**
@@ -108,6 +111,19 @@ typedef struct {
  * @return     The Audio Element handle
  */
 audio_element_handle_t http_stream_init(http_stream_cfg_t *config);
+
+/**
+ * @brief      Connect to next track in the playlist.
+ *
+ *             This function can be used in event_handler of http_stream.
+ *             User can call this function to connect to next track in playlist when he/she gets `HTTP_STREAM_FINISH_TRACK` event 
+ *
+ * @param      el  The http_stream element handle
+ *
+ * @return
+ *     - ESP_OK on success
+ *     - ESP_FAIL on errors
+ */
 esp_err_t http_stream_next_track(audio_element_handle_t el);
 esp_err_t http_stream_restart(audio_element_handle_t el);
 

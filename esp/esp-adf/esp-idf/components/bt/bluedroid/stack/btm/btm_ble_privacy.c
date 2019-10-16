@@ -22,16 +22,16 @@
  *
  ******************************************************************************/
 #include <string.h>
-#include "bt_target.h"
+#include "common/bt_target.h"
 
 #if (BLE_INCLUDED == TRUE && BLE_PRIVACY_SPT == TRUE)
-#include "bt_types.h"
-#include "hcimsgs.h"
-#include "btu.h"
+#include "stack/bt_types.h"
+#include "stack/hcimsgs.h"
+#include "stack/btu.h"
 //#include "vendor_hcidefs.h"
 #include "btm_int.h"
-#include "controller.h"
-#include "hcidefs.h"
+#include "device/controller.h"
+#include "stack/hcidefs.h"
 
 #define HCI_VENDOR_BLE_RPA_VSC          (0x0155 | HCI_GRP_VENDOR_SPECIFIC)
 
@@ -521,9 +521,10 @@ tBTM_STATUS btm_ble_read_resolving_list_entry(tBTM_SEC_DEV_REC *p_dev_rec)
                                         btm_ble_resolving_list_vsc_op_cmpl);
     }
 
-    if (st == BTM_CMD_STARTED)
+    if (st == BTM_CMD_STARTED) {
         btm_ble_enq_resolving_list_pending(p_dev_rec->bd_addr,
                                            BTM_BLE_META_READ_IRK_ENTRY);
+    }
 
     return st;
 }
@@ -771,8 +772,8 @@ BOOLEAN btm_ble_resolving_list_load_dev(tBTM_SEC_DEV_REC *p_dev_rec)
                     }
                     /* It will cause that scanner doesn't send scan request to advertiser
                      * which has sent IRK to us and we have stored the IRK in controller.
-                     * It is a design problem of hardware. The temporal solution is not to 
-                     * send the key to the controller and then resolve the random address in host. */
+                     * It is a hardware limitation. The preliminary solution is not to
+                     * send key to the controller, but to resolve the random address in host. */
                     /*
                     BTM_TRACE_DEBUG("%s:adding device to controller resolving list\n", __func__);
                     UINT8 *peer_irk = p_dev_rec->ble.keys.irk;
@@ -799,9 +800,10 @@ BOOLEAN btm_ble_resolving_list_load_dev(tBTM_SEC_DEV_REC *p_dev_rec)
                     }
                 }
 
-                if (rt)
+                if (rt) {
                     btm_ble_enq_resolving_list_pending(p_dev_rec->bd_addr,
                                                        BTM_BLE_META_ADD_IRK_ENTRY);
+                }
 
                 /* if resolving list has been turned on, re-enable it */
                 if (rl_mask) {

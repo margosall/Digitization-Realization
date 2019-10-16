@@ -5,6 +5,9 @@
         "string": "cpp",
         "string_view": "cpp",
         "board.h": "c",
-        "limits": "cpp"
+        "limits": "cpp",
+        "esp_log.h": "c",
+        "ai_audio_v1_0_board.h": "c",
+        "audio_common.h": "c"
     }
 }

@@ -24,13 +24,13 @@
  ******************************************************************************/
 
 #include <string.h>
-#include "bt_types.h"
-#include "bt_target.h"
-#include "bt_utils.h"
-#include "avdt_api.h"
-#include "avdtc_api.h"
+#include "stack/bt_types.h"
+#include "common/bt_target.h"
+#include "common/bt_defs.h"
+#include "stack/avdt_api.h"
+#include "stack/avdtc_api.h"
 #include "avdt_int.h"
-#include "btu.h"
+#include "stack/btu.h"
 
 #if (defined(AVDT_INCLUDED) && AVDT_INCLUDED == TRUE)
 
@@ -376,8 +376,8 @@ tAVDT_CCB *avdt_ccb_alloc(BD_ADDR bd_addr)
         if (!p_ccb->allocated) {
             p_ccb->allocated = TRUE;
             memcpy(p_ccb->peer_addr, bd_addr, BD_ADDR_LEN);
-            p_ccb->cmd_q = fixed_queue_new(SIZE_MAX);
-            p_ccb->rsp_q = fixed_queue_new(SIZE_MAX);
+            p_ccb->cmd_q = fixed_queue_new(QUEUE_SIZE_MAX);
+            p_ccb->rsp_q = fixed_queue_new(QUEUE_SIZE_MAX);
             p_ccb->timer_entry.param = (UINT32) p_ccb;
             AVDT_TRACE_DEBUG("avdt_ccb_alloc %d\n", i);
             break;

@@ -20,6 +20,9 @@
 #define _mdns_dbg_printf(...) printf(__VA_ARGS__)
 #endif
 
+/** The maximum number of services */
+#define MDNS_MAX_SERVICES           CONFIG_MDNS_MAX_SERVICES
+
 #define MDNS_ANSWER_PTR_TTL         4500
 #define MDNS_ANSWER_TXT_TTL         4500
 #define MDNS_ANSWER_SRV_TTL         120
@@ -112,9 +115,9 @@
 #define PCB_STATE_IS_ANNOUNCING(s) (s->state > PCB_PROBE_3 && s->state < PCB_RUNNING)
 #define PCB_STATE_IS_RUNNING(s) (s->state == PCB_RUNNING)
 
-#define MDNS_SEARCH_LOCK()      xSemaphoreTake(_mdns_server->search.lock, portMAX_DELAY)
-#define MDNS_SEARCH_UNLOCK()    xSemaphoreGive(_mdns_server->search.lock)
-
+#ifndef HOOK_MALLOC_FAILED
+#define HOOK_MALLOC_FAILED  ESP_LOGE(TAG, "Cannot allocate memory (line: %d, free heap: %d bytes)", __LINE__, esp_get_free_heap_size());
+#endif
 
 typedef enum {
     PCB_OFF, PCB_DUP, PCB_INIT,
@@ -286,6 +289,7 @@ typedef struct mdns_tx_packet_s {
     mdns_out_answer_t * answers;
     mdns_out_answer_t * servers;
     mdns_out_answer_t * additional;
+    bool queued;
 } mdns_tx_packet_t;
 
 typedef struct {
@@ -312,7 +316,7 @@ typedef struct mdns_search_once_s {
     uint32_t started_at;
     uint32_t sent_at;
     uint32_t timeout;
-    SemaphoreHandle_t lock;
+    SemaphoreHandle_t done_semaphore;
     uint16_t type;
     uint8_t max_results;
     uint8_t num_results;
@@ -361,8 +365,7 @@ typedef struct {
         } srv_port;
         struct {
             mdns_srv_item_t * service;
-            uint8_t num_items;
-            mdns_txt_item_t * txt;
+            mdns_txt_linked_item_t * txt;
         } srv_txt_replace;
         struct {
             mdns_srv_item_t * service;

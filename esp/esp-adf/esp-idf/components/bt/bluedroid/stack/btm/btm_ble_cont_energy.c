@@ -17,16 +17,16 @@
  ******************************************************************************/
 
 #include <string.h>
-#include "bt_target.h"
+#include "common/bt_target.h"
 
 #if (BLE_INCLUDED == TRUE)
-#include "bt_types.h"
-#include "hcimsgs.h"
-#include "btu.h"
+#include "stack/bt_types.h"
+#include "stack/hcimsgs.h"
+#include "stack/btu.h"
 #include "btm_int.h"
 //#include "bt_utils.h"
-#include "hcidefs.h"
-#include "btm_ble_api.h"
+#include "stack/hcidefs.h"
+#include "stack/btm_ble_api.h"
 
 tBTM_BLE_ENERGY_INFO_CB ble_energy_info_cb;
 
@@ -62,9 +62,10 @@ void btm_ble_cont_energy_cmpl_cback (tBTM_VSC_CMPL *p_params)
     BTM_TRACE_DEBUG("energy_info status=%d,tx_t=%u, rx_t=%u, ener_used=%u, idle_t=%u",
                     status, total_tx_time, total_rx_time, total_energy_used, total_idle_time);
 
-    if (NULL != ble_energy_info_cb.p_ener_cback)
+    if (NULL != ble_energy_info_cb.p_ener_cback) {
         ble_energy_info_cb.p_ener_cback(total_tx_time, total_rx_time, total_idle_time,
                                         total_energy_used, status);
+    }
 
     return;
 }

@@ -20,10 +20,10 @@
 #ifndef GAP_INT_H
 #define GAP_INT_H
 
-#include "bt_target.h"
-#include "fixed_queue.h"
-#include "gap_api.h"
-#include "gatt_api.h"
+#include "common/bt_target.h"
+#include "osi/fixed_queue.h"
+#include "stack/gap_api.h"
+#include "stack/gatt_api.h"
 #define GAP_MAX_BLOCKS 2        /* Concurrent GAP commands pending at a time*/
 /* Define the Generic Access Profile control structure */
 typedef struct {
@@ -136,7 +136,7 @@ typedef struct {
 
     /* LE GAP attribute database */
 #if BLE_INCLUDED == TRUE && GATTS_INCLUDED == TRUE
-    tGAP_ATTR               gatt_attr[GAP_MAX_CHAR_NUM];
+    tGAP_ATTR               gap_attr[GAP_MAX_CHAR_NUM];
     tGAP_CLCB               clcb[GAP_MAX_CL]; /* connection link*/
     tGATT_IF                gatt_if;
 #endif

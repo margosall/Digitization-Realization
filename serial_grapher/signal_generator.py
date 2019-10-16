@@ -8,7 +8,7 @@ p = pyaudio.PyAudio()
 defualt_device_index = p.get_default_output_device_info()['index']
 print(defualt_device_index)
 
-sampling_rate = 48000
+sampling_rate = 44100
 freq = 100
 freq2 = 500
 freq3 = 1000
@@ -18,12 +18,19 @@ x = np.arange(samples)
 y = np.sin(2 * np.pi * freq * x / sampling_rate)
 y2 = np.sin(2 * np.pi * freq2 * x / sampling_rate)
 y3 = np.sin(2 * np.pi * freq3 * x / sampling_rate)
-y = np.add(1 * np.sin(2 * np.pi * freq2 * x / sampling_rate), y)
+y = np.add(y2, y)
 y = np.subtract(y, y3)
+
+saw_tooth = sg.square(2 * np.pi * freq2 * x / sampling_rate)
+
+y = np.add(saw_tooth, y)
 
 y = y * 0.3
 
+
 # y = np.add(y, y2)
+
+print(y)
 
 data =  y.astype(np.float32).tostring()
 

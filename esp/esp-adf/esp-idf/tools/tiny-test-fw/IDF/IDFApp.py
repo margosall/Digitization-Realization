@@ -26,13 +26,24 @@ class IDFApp(App.BaseApp):
     """
 
     IDF_DOWNLOAD_CONFIG_FILE = "download.config"
+    IDF_FLASH_ARGS_FILE = "flash_project_args"
 
     def __init__(self, app_path):
         super(IDFApp, self).__init__(app_path)
         self.idf_path = self.get_sdk_path()
         self.binary_path = self.get_binary_path(app_path)
+        self.elf_file = self._get_elf_file_path(self.binary_path)
         assert os.path.exists(self.binary_path)
-        assert self.IDF_DOWNLOAD_CONFIG_FILE in os.listdir(self.binary_path)
+        if self.IDF_DOWNLOAD_CONFIG_FILE not in os.listdir(self.binary_path):
+            if self.IDF_FLASH_ARGS_FILE not in os.listdir(self.binary_path):
+                msg = ("Neither {} nor {} exists. "
+                       "Try to run 'make print_flash_cmd | tail -n 1 > {}/{}' "
+                       "or 'idf.py build' "
+                       "for resolving the issue."
+                       "").format(self.IDF_DOWNLOAD_CONFIG_FILE, self.IDF_FLASH_ARGS_FILE,
+                             self.binary_path, self.IDF_DOWNLOAD_CONFIG_FILE)
+                raise AssertionError(msg)
+
         self.esptool, self.partition_tool = self.get_tools()
 
     @classmethod
@@ -52,6 +63,34 @@ class IDFApp(App.BaseApp):
                                       "partition_table", "gen_esp32part.py")
         assert os.path.exists(esptool) and os.path.exists(partition_tool)
         return esptool, partition_tool
+    def _get_sdkconfig_paths(self):
+        """
+        returns list of possible paths where sdkconfig could be found
+
+        Note: could be overwritten by a derived class to provide other locations or order
+        """
+        return [os.path.join(self.binary_path, "sdkconfig"), os.path.join(self.binary_path, "..", "sdkconfig")]
+
+    def get_sdkconfig(self):
+        """
+        reads sdkconfig and returns a dictionary with all configuredvariables
+
+        :param sdkconfig_file: location of sdkconfig
+        :raise: AssertionError: if sdkconfig file does not exist in defined paths
+        """
+        d = {}
+        sdkconfig_file = None
+        for i in self._get_sdkconfig_paths():
+            if os.path.exists(i):
+                sdkconfig_file = i
+                break
+        assert sdkconfig_file is not None
+        with open(sdkconfig_file) as f:
+            for line in f:
+                configs = line.split('=')
+                if len(configs) == 2:
+                    d[configs[0]] = configs[1]
+        return d
 
     def get_binary_path(self, app_path):
         """
@@ -63,6 +102,15 @@ class IDFApp(App.BaseApp):
         :return: abs app binary path
         """
         pass
+
+    @staticmethod
+    def _get_elf_file_path(binary_path):
+        ret = ""
+        file_names = os.listdir(binary_path)
+        for fn in file_names:
+            if os.path.splitext(fn)[1] == ".elf":
+                ret = os.path.join(binary_path, fn)
+        return ret
 
     def process_arg(self, arg):
         """
@@ -80,8 +128,17 @@ class IDFApp(App.BaseApp):
 
         :return: download config, partition info
         """
-        with open(os.path.join(self.binary_path, self.IDF_DOWNLOAD_CONFIG_FILE), "r") as f:
-            configs = f.read().split(" ")
+
+        if self.IDF_FLASH_ARGS_FILE in os.listdir(self.binary_path):
+            with open(os.path.join(self.binary_path, self.IDF_FLASH_ARGS_FILE), "r") as f:
+                configs = []
+                for line in f:
+                    line = line.strip()
+                    if len(line) > 0:
+                        configs += line.split()
+        else:
+            with open(os.path.join(self.binary_path, self.IDF_DOWNLOAD_CONFIG_FILE), "r") as f:
+                configs = f.read().split(" ")
 
         download_configs = ["--chip", "auto", "--before", "default_reset",
                             "--after", "hard_reset", "write_flash", "-z"]
@@ -125,6 +182,12 @@ class IDFApp(App.BaseApp):
 
 
 class Example(IDFApp):
+    def _get_sdkconfig_paths(self):
+        """
+        overrides the parent method to provide exact path of sdkconfig for example tests
+        """
+        return [os.path.join(self.binary_path, "..", "sdkconfig")]
+
     def get_binary_path(self, app_path):
         # build folder of example path
         path = os.path.join(self.idf_path, app_path, "build")
@@ -144,11 +207,28 @@ class Example(IDFApp):
 
 class UT(IDFApp):
     def get_binary_path(self, app_path):
-        if app_path:
-            # specified path, join it and the idf path
-            path = os.path.join(self.idf_path, app_path)
-        else:
-            path = os.path.join(self.idf_path, "tools", "unit-test-app", "build")
+        """
+        :param app_path: app path or app config
+        :return: binary path
+        """
+        if not app_path:
+            app_path = "default"
+
+        path = os.path.join(self.idf_path, app_path)
+        if not os.path.exists(path):
+            while True:
+                # try to get by config
+                if app_path == "default":
+                    # it's default config, we first try to get form build folder of unit-test-app
+                    path = os.path.join(self.idf_path, "tools", "unit-test-app", "build")
+                    if os.path.exists(path):
+                        # found, use bin in build path
+                        break
+                # ``make ut-build-all-configs`` or ``make ut-build-CONFIG`` will copy binary to output folder
+                path = os.path.join(self.idf_path, "tools", "unit-test-app", "output", app_path)
+                if os.path.exists(path):
+                    break
+                raise OSError("Failed to get unit-test-app binary path")
         return path
 
 

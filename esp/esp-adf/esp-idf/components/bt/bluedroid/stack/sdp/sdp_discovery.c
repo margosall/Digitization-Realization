@@ -26,15 +26,15 @@
 #include <string.h>
 #include <stdio.h>
 
-#include "bt_target.h"
-#include "allocator.h"
-#include "l2cdefs.h"
-#include "hcidefs.h"
-#include "hcimsgs.h"
-#include "sdp_api.h"
+#include "common/bt_target.h"
+#include "osi/allocator.h"
+#include "stack/l2cdefs.h"
+#include "stack/hcidefs.h"
+#include "stack/hcimsgs.h"
+#include "stack/sdp_api.h"
 #include "sdpint.h"
-#include "btu.h"
-#include "btm_api.h"
+#include "stack/btu.h"
+#include "stack/btm_api.h"
 
 
 #ifndef SDP_DEBUG_RAW
@@ -354,15 +354,17 @@ static void sdp_copy_raw_data (tCONN_CB *p_ccb, BOOLEAN offset)
             type = *p++;
             p = sdpu_get_len_from_type (p, type, &list_len);
         }
-        if (list_len && list_len < cpy_len ) {
+        if (list_len < cpy_len ) {
             cpy_len = list_len;
         }
 #if (SDP_DEBUG_RAW == TRUE)
-        SDP_TRACE_WARNING("list_len :%d cpy_len:%d raw_size:%d raw_used:%d\n",
+        SDP_TRACE_DEBUG("list_len :%d cpy_len:%d raw_size:%d raw_used:%d\n",
                           list_len, cpy_len, p_ccb->p_db->raw_size, p_ccb->p_db->raw_used);
 #endif
-        memcpy (&p_ccb->p_db->raw_data[p_ccb->p_db->raw_used], p, cpy_len);
-        p_ccb->p_db->raw_used += cpy_len;
+        if (cpy_len != 0){
+            memcpy (&p_ccb->p_db->raw_data[p_ccb->p_db->raw_used], p, cpy_len);
+            p_ccb->p_db->raw_used += cpy_len;
+        }
     }
 }
 #endif
@@ -656,7 +658,7 @@ static void process_service_search_attr_rsp (tCONN_CB *p_ccb, UINT8 *p_reply)
     /*******************************************************************/
 
 #if (SDP_RAW_DATA_INCLUDED == TRUE)
-    SDP_TRACE_WARNING("process_service_search_attr_rsp\n");
+    SDP_TRACE_DEBUG("process_service_search_attr_rsp\n");
     sdp_copy_raw_data (p_ccb, TRUE);
 #endif
 

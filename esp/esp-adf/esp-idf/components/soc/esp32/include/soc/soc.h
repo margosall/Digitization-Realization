@@ -1,4 +1,4 @@
-// Copyright 2010-2017 Espressif Systems (Shanghai) PTE LTD
+// Copyright 2010-2018 Espressif Systems (Shanghai) PTE LTD
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -59,16 +59,20 @@
 #define APP_CPU_NUM (1)
 
 /* Overall memory map */
-#define SOC_IROM_LOW    0x400D0000
-#define SOC_IROM_HIGH   0x40400000
-#define SOC_DROM_LOW    0x3F400000
-#define SOC_DROM_HIGH   0x3F800000
-#define SOC_RTC_IRAM_LOW  0x400C0000
-#define SOC_RTC_IRAM_HIGH 0x400C2000
-#define SOC_RTC_DATA_LOW  0x50000000
-#define SOC_RTC_DATA_HIGH 0x50002000
-#define SOC_EXTRAM_DATA_LOW 0x3F800000
-#define SOC_EXTRAM_DATA_HIGH 0x3FC00000
+#define SOC_IROM_LOW            0x400D0000
+#define SOC_IROM_HIGH           0x40400000
+#define SOC_DROM_LOW            0x3F400000
+#define SOC_DROM_HIGH           0x3F800000
+#define SOC_DRAM_LOW            0x3FAE0000
+#define SOC_DRAM_HIGH           0x40000000
+#define SOC_RTC_IRAM_LOW        0x400C0000
+#define SOC_RTC_IRAM_HIGH       0x400C2000
+#define SOC_RTC_DATA_LOW        0x50000000
+#define SOC_RTC_DATA_HIGH       0x50002000
+#define SOC_EXTRAM_DATA_LOW     0x3F800000
+#define SOC_EXTRAM_DATA_HIGH    0x3FC00000
+
+#define SOC_MAX_CONTIGUOUS_RAM_SIZE 0x400000 ///< Largest span of contiguous memory (DRAM or IRAM) in the address space
 
 
 #define DR_REG_DPORT_BASE                       0x3ff00000
@@ -89,11 +93,8 @@
 #define DR_REG_RTCCNTL_BASE                     0x3ff48000
 #define DR_REG_RTCIO_BASE                       0x3ff48400
 #define DR_REG_SENS_BASE                        0x3ff48800
+#define DR_REG_RTC_I2C_BASE                     0x3ff48C00
 #define DR_REG_IO_MUX_BASE                      0x3ff49000
-#define DR_REG_RTCMEM0_BASE                     0x3ff61000
-#define DR_REG_RTCMEM1_BASE                     0x3ff62000
-#define DR_REG_RTCMEM2_BASE                     0x3ff63000
-#define DR_REG_SYSCON_BASE                      0x3ff66000
 #define DR_REG_HINF_BASE                        0x3ff4B000
 #define DR_REG_UHCI1_BASE                       0x3ff4C000
 #define DR_REG_I2S_BASE                         0x3ff4F000
@@ -113,12 +114,17 @@
 #define DR_REG_PWM_BASE                         0x3ff5E000
 #define DR_REG_TIMERGROUP0_BASE                 0x3ff5F000
 #define DR_REG_TIMERGROUP1_BASE                 0x3ff60000
+#define DR_REG_RTCMEM0_BASE                     0x3ff61000
+#define DR_REG_RTCMEM1_BASE                     0x3ff62000
+#define DR_REG_RTCMEM2_BASE                     0x3ff63000
 #define DR_REG_SPI2_BASE                        0x3ff64000
 #define DR_REG_SPI3_BASE                        0x3ff65000
-#define DR_REG_APB_CTRL_BASE                    0x3ff66000
+#define DR_REG_SYSCON_BASE                      0x3ff66000
+#define DR_REG_APB_CTRL_BASE                    0x3ff66000    /* Old name for SYSCON, to be removed */
 #define DR_REG_I2C1_EXT_BASE                    0x3ff67000
 #define DR_REG_SDMMC_BASE                       0x3ff68000
 #define DR_REG_EMAC_BASE                        0x3ff69000
+#define DR_REG_CAN_BASE                         0x3ff6B000
 #define DR_REG_PWM1_BASE                        0x3ff6C000
 #define DR_REG_I2S1_BASE                        0x3ff6D000
 #define DR_REG_UART2_BASE                       0x3ff6E000
@@ -128,10 +134,11 @@
 
 //Registers Operation {{
 #define ETS_UNCACHED_ADDR(addr) (addr)
-#define ETS_CACHED_ADDR(addr) (addr) 
+#define ETS_CACHED_ADDR(addr) (addr)
 
 #ifndef __ASSEMBLER__
 #define BIT(nr)                 (1UL << (nr))
+#define BIT64(nr)               (1ULL << (nr))
 #else
 #define BIT(nr)                 (1 << (nr))
 #endif
@@ -281,10 +288,18 @@
 #define SOC_DROM_HIGH   0x3F800000
 #define SOC_IROM_LOW    0x400D0000
 #define SOC_IROM_HIGH   0x40400000
+#define SOC_IROM_MASK_LOW   0x40000000
+#define SOC_IROM_MASK_HIGH  0x40070000
+#define SOC_CACHE_PRO_LOW   0x40070000
+#define SOC_CACHE_PRO_HIGH  0x40078000
+#define SOC_CACHE_APP_LOW   0x40078000
+#define SOC_CACHE_APP_HIGH  0x40080000
 #define SOC_IRAM_LOW    0x40080000
 #define SOC_IRAM_HIGH   0x400A0000
 #define SOC_RTC_IRAM_LOW  0x400C0000
 #define SOC_RTC_IRAM_HIGH 0x400C2000
+#define SOC_RTC_DRAM_LOW  0x3FF80000
+#define SOC_RTC_DRAM_HIGH 0x3FF82000
 #define SOC_RTC_DATA_LOW  0x50000000
 #define SOC_RTC_DATA_HIGH 0x50002000
 

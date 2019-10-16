@@ -92,6 +92,7 @@
 */
 
 #include <stdlib.h>
+#include <string.h>
 #include <xtensa/config/core.h>
 
 #include "xtensa_rtos.h"
@@ -107,6 +108,7 @@
 #include "esp_crosscore_int.h"
 
 #include "esp_intr_alloc.h"
+#include "esp_log.h"
 
 /* Defined in portasm.h */
 extern void _frxt_tick_timer_init(void);
@@ -122,6 +124,8 @@ extern void _xt_coproc_init(void);
     #define SYSTICK_INTR_ID (ETS_INTERNAL_TIMER1_INTR_SOURCE+ETS_INTERNAL_INTR_SOURCE_OFF)
 #endif
 
+_Static_assert(tskNO_AFFINITY == CONFIG_FREERTOS_NO_AFFINITY, "incorrect tskNO_AFFINITY value");
+
 /*-----------------------------------------------------------*/
 
 unsigned port_xSchedulerRunning[portNUM_PROCESSORS] = {0}; // Duplicate of inaccessible xSchedulerRunning; needed at startup to avoid counting nesting
@@ -131,6 +135,18 @@ unsigned port_interruptNesting[portNUM_PROCESSORS] = {0};  // Interrupt nesting 
 
 // User exception dispatcher when exiting
 void _xt_user_exit(void);
+
+#if CONFIG_FREERTOS_TASK_FUNCTION_WRAPPER
+// Wrapper to allow task functions to return (increases stack overhead by 16 bytes)
+static void vPortTaskWrapper(TaskFunction_t pxCode, void *pvParameters)
+{
+	pxCode(pvParameters);
+	//FreeRTOS tasks should not return. Log the task name and abort.
+	char * pcTaskName = pcTaskGetTaskName(NULL);
+	ESP_LOGE("FreeRTOS", "FreeRTOS Task \"%s\" should not return, Aborting now!", pcTaskName);
+	abort();
+}
+#endif
 
 /*
  * Stack initialization
@@ -146,9 +162,24 @@ StackType_t *pxPortInitialiseStack( StackType_t *pxTopOfStack, TaskFunction_t px
 	#if XCHAL_CP_NUM > 0
 	uint32_t *p;
 	#endif
+	uint32_t *threadptr;
+	void *task_thread_local_start;
+	extern int _thread_local_start, _thread_local_end, _rodata_start;
+	// TODO: check that TLS area fits the stack
+	uint32_t thread_local_sz = (uint8_t *)&_thread_local_end - (uint8_t *)&_thread_local_start;
 
-	/* Create interrupt stack frame aligned to 16 byte boundary */
-	sp = (StackType_t *) (((UBaseType_t)(pxTopOfStack + 1) - XT_CP_SIZE - XT_STK_FRMSZ) & ~0xf);
+	thread_local_sz = ALIGNUP(0x10, thread_local_sz);
+
+	/* Initialize task's stack so that we have the following structure at the top:
+
+		----LOW ADDRESSES ----------------------------------------HIGH ADDRESSES----------
+		 task stack | interrupt stack frame | thread local vars | co-processor save area |
+		----------------------------------------------------------------------------------
+					|																	 |
+					SP 																pxTopOfStack
+
+		All parts are aligned to 16 byte boundary. */
+	sp = (StackType_t *) (((UBaseType_t)(pxTopOfStack + 1) - XT_CP_SIZE - thread_local_sz - XT_STK_FRMSZ) & ~0xf);
 
 	/* Clear the entire frame (do not use memset() because we don't depend on C library) */
 	for (tp = sp; tp <= pxTopOfStack; ++tp)
@@ -157,19 +188,33 @@ StackType_t *pxPortInitialiseStack( StackType_t *pxTopOfStack, TaskFunction_t px
 	frame = (XtExcFrame *) sp;
 
 	/* Explicitly initialize certain saved registers */
-	frame->pc   = (UBaseType_t) pxCode;             /* task entrypoint                */
-	frame->a0   = 0;                                /* to terminate GDB backtrace     */
-	frame->a1   = (UBaseType_t) sp + XT_STK_FRMSZ;  /* physical top of stack frame    */
-	frame->exit = (UBaseType_t) _xt_user_exit;      /* user exception exit dispatcher */
+	#if CONFIG_FREERTOS_TASK_FUNCTION_WRAPPER
+	frame->pc	= (UBaseType_t) vPortTaskWrapper;	/* task wrapper						*/
+	#else
+	frame->pc   = (UBaseType_t) pxCode;				/* task entrypoint					*/
+	#endif
+	frame->a0	= 0;								/* to terminate GDB backtrace		*/
+	frame->a1	= (UBaseType_t) sp + XT_STK_FRMSZ;	/* physical top of stack frame		*/
+	frame->exit = (UBaseType_t) _xt_user_exit;		/* user exception exit dispatcher	*/
 
 	/* Set initial PS to int level 0, EXCM disabled ('rfe' will enable), user mode. */
 	/* Also set entry point argument parameter. */
 	#ifdef __XTENSA_CALL0_ABI__
-	frame->a2 = (UBaseType_t) pvParameters;
+		#if CONFIG_FREERTOS_TASK_FUNCTION_WRAPPER
+		frame->a2 = (UBaseType_t) pxCode;
+		frame->a3 = (UBaseType_t) pvParameters;
+		#else
+		frame->a2 = (UBaseType_t) pvParameters;
+		#endif
 	frame->ps = PS_UM | PS_EXCM;
 	#else
 	/* + for windowed ABI also set WOE and CALLINC (pretend task was 'call4'd). */
-	frame->a6 = (UBaseType_t) pvParameters;
+		#if CONFIG_FREERTOS_TASK_FUNCTION_WRAPPER
+		frame->a6 = (UBaseType_t) pxCode;
+		frame->a7 = (UBaseType_t) pvParameters;
+		#else
+		frame->a6 = (UBaseType_t) pvParameters;
+		#endif
 	frame->ps = PS_UM | PS_EXCM | PS_WOE | PS_CALLINC(1);
 	#endif
 
@@ -177,6 +222,14 @@ StackType_t *pxPortInitialiseStack( StackType_t *pxTopOfStack, TaskFunction_t px
 	/* Set the initial virtual priority mask value to all 1's. */
 	frame->vpri = 0xFFFFFFFF;
 	#endif
+
+	/* Init threadptr reg and TLS vars */
+	task_thread_local_start = (void *)(((uint32_t)pxTopOfStack - XT_CP_SIZE - thread_local_sz) & ~0xf);
+	memcpy(task_thread_local_start, &_thread_local_start, thread_local_sz);
+	threadptr = (uint32_t *)(sp + XT_STK_EXTRA);
+	/* shift threadptr by the offset of _thread_local_start from DROM start;
+	   need to take into account extra 16 bytes offset */
+	*threadptr = (uint32_t)task_thread_local_start - ((uint32_t)&_thread_local_start - (uint32_t)&_rodata_start) - 0x10;
 
 	#if XCHAL_CP_NUM > 0
 	/* Init the coprocessor save area (see xtensa_context.h) */
@@ -288,6 +341,14 @@ BaseType_t xPortInIsrContext()
 	return ret;
 }
 
+/*
+ * This function will be called in High prio ISRs. Returns true if the current core was in ISR context
+ * before calling into high prio ISR context.
+ */
+BaseType_t IRAM_ATTR xPortInterruptedFromISRContext()
+{
+	return (port_interruptNesting[xPortGetCoreID()] != 0);
+}
 
 void vPortAssertIfInISR()
 {

@@ -1,8 +1,26 @@
 # Play mp3 file from HTTP
 
-The demo plays a MP3 downloaded from HTTP. 
+The example plays a MP3 downloaded from HTTP. 
 
-To run this example you need ESP32 LyraT or compatible board:
+## Compatibility
 
-- Connect speakers or headphones to the board. 
-- Setup the Wi-Fi connection by `make menuconfig` -> `Example configuration` -> Fill Wi-Fi SSID and Password
+| ESP32-LyraT | ESP32-LyraTD-MSC | ESP32-LyraT-Mini |
+|:-----------:|:----------------:|:----------------:|
+| [![alt text](../../../docs/_static/esp32-lyrat-v4.3-side-small.jpg "ESP32-LyraT")](https://docs.espressif.com/projects/esp-adf/en/latest/get-started/get-started-esp32-lyrat.html) | [![alt text](../../../docs/_static/esp32-lyratd-msc-v2.2-small.jpg "ESP32-LyraTD-MSC")](https://docs.espressif.com/projects/esp-adf/en/latest/get-started/get-started-esp32-lyratd-msc.html) | [![alt text](../../../docs/_static/esp32-lyrat-mini-v1.2-small.jpg "ESP32-LyraT-Mini")](https://docs.espressif.com/projects/esp-adf/en/latest/get-started/get-started-esp32-lyrat-mini.html) |
+| ![alt text](../../../docs/_static/yes-button.png "Compatible") | ![alt text](../../../docs/_static/yes-button.png "Compatible") | ![alt text](../../../docs/_static/yes-button.png "Compatible") |
+
+## Usage
+
+Prepare the audio board:
+
+- Connect speakers or headphones to the board.
+
+Configure the example:
+
+- Select compatible audio board in `menuconfig` > `Audio HAL`.
+- Set up the Wi-Fi connection by running `menuconfig` > `Example Configuration` and filling in `WiFi SSID` and `WiFi Password`.
+
+Load and run the example:
+
+- The audio board will first connect to the Wi-Fi.
+- Then the board will start playing automatically.

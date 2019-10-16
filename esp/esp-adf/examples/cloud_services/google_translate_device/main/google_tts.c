@@ -216,7 +216,7 @@ esp_err_t google_tts_destroy(google_tts_handle_t tts)
     return ESP_OK;
 }
 
-esp_err_t googe_tts_set_listener(google_tts_handle_t tts, audio_event_iface_handle_t listener)
+esp_err_t google_tts_set_listener(google_tts_handle_t tts, audio_event_iface_handle_t listener)
 {
     if (listener) {
         audio_pipeline_set_listener(tts->pipeline, listener);
@@ -227,7 +227,8 @@ esp_err_t googe_tts_set_listener(google_tts_handle_t tts, audio_event_iface_hand
 bool google_tts_check_event_finish(google_tts_handle_t tts, audio_event_iface_msg_t *msg)
 {
     if (msg->source_type == AUDIO_ELEMENT_TYPE_ELEMENT && msg->source == (void *) tts->i2s_writer
-            && msg->cmd == AEL_MSG_CMD_REPORT_STATUS && (int) msg->data == AEL_STATUS_STATE_STOPPED) {
+            && msg->cmd == AEL_MSG_CMD_REPORT_STATUS
+            && (((int)msg->data == AEL_STATUS_STATE_STOPPED) || ((int)msg->data == AEL_STATUS_STATE_FINISHED))) {
         return true;
     }
     return false;

@@ -19,12 +19,12 @@
 #include "driver/uart.h"
 
 #include "netif/ppp/pppos.h"
+#include "netif/ppp/pppapi.h"
 #include "lwip/err.h"
 #include "lwip/sockets.h"
 #include "lwip/sys.h"
 #include "lwip/netdb.h"
 #include "lwip/dns.h"
-#include "lwip/pppapi.h"
 
 /* The examples use simple GSM configuration that you can set via
    'make menuconfig'.
@@ -54,9 +54,9 @@ struct netif ppp_netif;
 static const char *TAG = "example";
 
 typedef struct {
-    char *cmd;
+    const char *cmd;
     uint16_t cmdSize;
-    char *cmdResponseOnOk;
+    const char *cmdResponseOnOk;
     uint32_t timeoutMs;
 } GSM_Cmd;
 

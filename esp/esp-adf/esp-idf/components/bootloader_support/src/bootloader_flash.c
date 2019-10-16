@@ -73,6 +73,11 @@ esp_err_t bootloader_flash_erase_sector(size_t sector)
     return spi_flash_erase_sector(sector);
 }
 
+esp_err_t bootloader_flash_erase_range(uint32_t start_addr, uint32_t size)
+{
+    return spi_flash_erase_range(start_addr, size);
+}
+
 #else
 /* Bootloader version, uses ROM functions only */
 #include <soc/dport_reg.h>
@@ -86,8 +91,6 @@ static const char *TAG = "bootloader_flash";
 */
 #define MMU_BLOCK0_VADDR  0x3f400000
 #define MMU_BLOCK50_VADDR 0x3f720000
-#define MMU_FLASH_MASK    0xffff0000
-#define MMU_BLOCK_SIZE    0x00010000
 
 static bool mapped;
 
@@ -107,10 +110,11 @@ const void *bootloader_mmap(uint32_t src_addr, uint32_t size)
     }
 
     uint32_t src_addr_aligned = src_addr & MMU_FLASH_MASK;
-    uint32_t count = (size + (src_addr - src_addr_aligned) + 0xffff) / MMU_BLOCK_SIZE;
+    uint32_t count = bootloader_cache_pages_to_map(size, src_addr);
     Cache_Read_Disable(0);
     Cache_Flush(0);
-    ESP_LOGD(TAG, "mmu set paddr=%08x count=%d", src_addr_aligned, count );
+    ESP_LOGD(TAG, "mmu set paddr=%08x count=%d size=%x src_addr=%x src_addr_aligned=%x",
+            src_addr & MMU_FLASH_MASK, count, size, src_addr, src_addr_aligned );
     int e = cache_flash_mmu_set(0, 0, MMU_BLOCK0_VADDR, src_addr_aligned, 64, count);
     if (e != 0) {
         ESP_LOGE(TAG, "cache_flash_mmu_set failed: %d\n", e);
@@ -247,4 +251,28 @@ esp_err_t bootloader_flash_erase_sector(size_t sector)
     return spi_to_esp_err(esp_rom_spiflash_erase_sector(sector));
 }
 
+esp_err_t bootloader_flash_erase_range(uint32_t start_addr, uint32_t size)
+{
+    if (start_addr % FLASH_SECTOR_SIZE != 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (size % FLASH_SECTOR_SIZE != 0) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    size_t start = start_addr / FLASH_SECTOR_SIZE;
+    size_t end = start + size / FLASH_SECTOR_SIZE;
+    const size_t sectors_per_block = FLASH_BLOCK_SIZE / FLASH_SECTOR_SIZE;
+
+    esp_rom_spiflash_result_t rc = ESP_ROM_SPIFLASH_RESULT_OK;
+    for (size_t sector = start; sector != end && rc == ESP_ROM_SPIFLASH_RESULT_OK; ) {
+        if (sector % sectors_per_block == 0 && end - sector >= sectors_per_block) {
+            rc = esp_rom_spiflash_erase_block(sector / sectors_per_block);
+            sector += sectors_per_block;
+        } else {
+            rc = esp_rom_spiflash_erase_sector(sector);
+            ++sector;
+        }
+    }
+    return spi_to_esp_err(rc);
+}
 #endif

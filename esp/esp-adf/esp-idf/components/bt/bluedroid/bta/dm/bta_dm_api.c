@@ -22,15 +22,15 @@
  *
  ******************************************************************************/
 
-#include "bta_sys.h"
-#include "bta_api.h"
+#include "bta/bta_sys.h"
+#include "bta/bta_api.h"
 #include "bta_dm_int.h"
 #include "bta_sys_int.h"
-#include "btm_api.h"
+#include "stack/btm_api.h"
 #include "btm_int.h"
 #include <string.h>
-#include "utl.h"
-#include "allocator.h"
+#include "bta/utl.h"
+#include "osi/allocator.h"
 
 /*****************************************************************************
 **  Constants
@@ -166,7 +166,7 @@ void BTA_DisableTestMode(void)
 ** Returns          void
 **
 *******************************************************************************/
-void BTA_DmSetDeviceName(char *p_name)
+void BTA_DmSetDeviceName(const char *p_name)
 {
 
     tBTA_DM_API_SET_NAME    *p_msg;
@@ -206,12 +206,13 @@ void BTA_DmBleReadAdvTxPower(tBTA_CMPL_CB *cmpl_cb)
     }
 }
 
-void BTA_DmBleReadRSSI(BD_ADDR remote_addr, tBTA_CMPL_CB *cmpl_cb)
+void BTA_DmBleReadRSSI(BD_ADDR remote_addr, tBTA_TRANSPORT transport, tBTA_CMPL_CB *cmpl_cb)
 {
     tBTA_DM_API_READ_RSSI *p_msg;
     if ((p_msg = (tBTA_DM_API_READ_RSSI *)osi_malloc(sizeof(tBTA_DM_API_READ_RSSI))) != NULL) {
         p_msg->hdr.event = BTA_DM_API_BLE_READ_RSSI_EVT;
         memcpy(p_msg->remote_addr, remote_addr, sizeof(BD_ADDR));
+        p_msg->transport = transport;
         p_msg->read_rssi_cb = cmpl_cb;
         bta_sys_sendmsg(p_msg);
     }
@@ -437,6 +438,29 @@ void BTA_DmBondCancel(BD_ADDR bd_addr)
 
 /*******************************************************************************
 **
+** Function         BTA_DMSetPinType
+**
+** Description      This function set pin type as BTM_PIN_TYPE_FIXED or BTM_PIN_TYPE_VARIABLE
+**
+**
+** Returns          void
+**
+*******************************************************************************/
+void BTA_DMSetPinType (UINT8 pin_type, UINT8 *pin_code, UINT8 pin_code_len)
+{
+    tBTA_DM_API_SET_PIN_TYPE    *p_msg;
+
+    if ((p_msg = (tBTA_DM_API_SET_PIN_TYPE *) osi_malloc(sizeof(tBTA_DM_API_SET_PIN_TYPE))) != NULL) {
+        p_msg->hdr.event = BTA_DM_API_SET_PIN_TYPE_EVT;
+        p_msg->pin_type = pin_type;
+        p_msg->pin_len = pin_code_len;
+        memcpy(p_msg->p_pin, pin_code, pin_code_len);
+        bta_sys_sendmsg(p_msg);
+    }
+}
+
+/*******************************************************************************
+**
 ** Function         BTA_DmPinReply
 **
 ** Description      This function provides a pincode for a remote device when
@@ -447,7 +471,6 @@ void BTA_DmBondCancel(BD_ADDR bd_addr)
 **
 *******************************************************************************/
 void BTA_DmPinReply(BD_ADDR bd_addr, BOOLEAN accept, UINT8 pin_len, UINT8 *p_pin)
-
 {
     tBTA_DM_API_PIN_REPLY    *p_msg;
 
@@ -512,6 +535,29 @@ void BTA_DmConfirm(BD_ADDR bd_addr, BOOLEAN accept)
 
 /*******************************************************************************
 **
+** Function         BTA_DmPasskeyReqReply
+**
+** Description      This function is called to provide the passkey for
+**                  Simple Pairing in response to BTA_DM_SP_KEY_REQ_EVT
+**
+** Returns          void
+**
+*******************************************************************************/
+#if (BT_SSP_INCLUDED == TRUE)
+void BTA_DmPasskeyReqReply(BOOLEAN accept, BD_ADDR bd_addr, UINT32 passkey)
+{
+    tBTA_DM_API_KEY_REQ    *p_msg;
+    if ((p_msg = (tBTA_DM_API_KEY_REQ *) osi_malloc(sizeof(tBTA_DM_API_KEY_REQ))) != NULL) {
+        p_msg->hdr.event = BTA_DM_API_KEY_REQ_EVT;
+        bdcpy(p_msg->bd_addr, bd_addr);
+        p_msg->accept = accept;
+        p_msg->passkey = passkey;
+        bta_sys_sendmsg(p_msg);
+    }
+}
+#endif ///BT_SSP_INCLUDED == TRUE
+/*******************************************************************************
+**
 ** Function         BTA_DmAddDevice
 **
 ** Description      This function adds a device to the security database list of
@@ -569,7 +615,7 @@ void BTA_DmAddDevice(BD_ADDR bd_addr, DEV_CLASS dev_class, LINK_KEY link_key,
 ** Returns          void
 **
 *******************************************************************************/
-tBTA_STATUS BTA_DmRemoveDevice(BD_ADDR bd_addr)
+tBTA_STATUS BTA_DmRemoveDevice(BD_ADDR bd_addr, tBT_TRANSPORT transport)
 {
     tBTA_DM_API_REMOVE_DEVICE *p_msg;
 
@@ -578,6 +624,7 @@ tBTA_STATUS BTA_DmRemoveDevice(BD_ADDR bd_addr)
 
         p_msg->hdr.event = BTA_DM_API_REMOVE_DEVICE_EVT;
         bdcpy(p_msg->bd_addr, bd_addr);
+        p_msg->transport = transport;
         bta_sys_sendmsg(p_msg);
     } else {
         return BTA_FAILURE;
@@ -750,12 +797,13 @@ void BTA_DmAddBleKey (BD_ADDR bd_addr, tBTA_LE_KEY_VALUE *p_le_key, tBTA_LE_KEY_
 **
 ** Parameters:      bd_addr          - BD address of the peer
 **                  dev_type         - Remote device's device type.
+**                  auth_mode        - auth mode
 **                  addr_type        - LE device address type.
 **
 ** Returns          void
 **
 *******************************************************************************/
-void BTA_DmAddBleDevice(BD_ADDR bd_addr, tBLE_ADDR_TYPE addr_type, tBT_DEVICE_TYPE dev_type)
+void BTA_DmAddBleDevice(BD_ADDR bd_addr, tBLE_ADDR_TYPE addr_type, int auth_mode, tBT_DEVICE_TYPE dev_type)
 {
     tBTA_DM_API_ADD_BLE_DEVICE *p_msg;
 
@@ -765,6 +813,7 @@ void BTA_DmAddBleDevice(BD_ADDR bd_addr, tBLE_ADDR_TYPE addr_type, tBT_DEVICE_TY
         p_msg->hdr.event = BTA_DM_API_ADD_BLEDEVICE_EVT;
         bdcpy(p_msg->bd_addr, bd_addr);
         p_msg->addr_type = addr_type;
+        p_msg->auth_mode = auth_mode;
         p_msg->dev_type = dev_type;
 
         bta_sys_sendmsg(p_msg);
@@ -801,6 +850,21 @@ void BTA_DmBlePasskeyReply(BD_ADDR bd_addr, BOOLEAN accept, UINT32 passkey)
         bta_sys_sendmsg(p_msg);
     }
 }
+
+void BTA_DmBleSetStaticPasskey(bool add, uint32_t passkey)
+{
+    tBTA_DM_API_SET_DEFAULT_PASSKEY    *p_msg;
+
+    if ((p_msg = (tBTA_DM_API_SET_DEFAULT_PASSKEY *) osi_malloc(sizeof(tBTA_DM_API_SET_DEFAULT_PASSKEY))) != NULL) {
+        memset(p_msg, 0, sizeof(tBTA_DM_API_SET_DEFAULT_PASSKEY));
+
+        p_msg->hdr.event = BTA_DM_API_BLE_SET_STATIC_PASSKEY_EVT;
+        p_msg->add = add;
+        p_msg->static_passkey = passkey;
+        bta_sys_sendmsg(p_msg);
+    }
+}
+
 /*******************************************************************************
 **
 ** Function         BTA_DmBleConfirmReply
@@ -968,6 +1032,7 @@ void BTA_DmSetBleScanParams(tGATT_IF client_if, UINT32 scan_interval,
 **                  scan_interval - scan interval
 **                  scan_window - scan window
 **                  scan_mode - scan mode
+**                  scan_duplicate_filter - scan duplicate filter
 **                  scan_param_setup_status_cback - Set scan param status callback
 **
 ** Returns          void
@@ -975,7 +1040,7 @@ void BTA_DmSetBleScanParams(tGATT_IF client_if, UINT32 scan_interval,
 *******************************************************************************/
 void BTA_DmSetBleScanFilterParams(tGATT_IF client_if, UINT32 scan_interval,
                                   UINT32 scan_window, tBLE_SCAN_MODE scan_mode, UINT8 scan_fil_poilcy,
-                                  UINT8 addr_type_own, tBLE_SCAN_PARAM_SETUP_CBACK scan_param_setup_cback)
+                                  UINT8 addr_type_own, UINT8 scan_duplicate_filter, tBLE_SCAN_PARAM_SETUP_CBACK scan_param_setup_cback)
 {
     tBTA_DM_API_BLE_SCAN_FILTER_PARAMS *p_msg;
 
@@ -987,6 +1052,7 @@ void BTA_DmSetBleScanFilterParams(tGATT_IF client_if, UINT32 scan_interval,
         p_msg->scan_window = scan_window;
         p_msg->scan_mode = scan_mode;
         p_msg->addr_type_own = addr_type_own;
+        p_msg->scan_duplicate_filter = scan_duplicate_filter;
         p_msg->scan_filter_policy = scan_fil_poilcy;
         p_msg->scan_param_setup_cback = scan_param_setup_cback;
 
@@ -1187,6 +1253,34 @@ void BTA_DmBleSetScanRspRaw (UINT8 *p_raw_scan_rsp, UINT32 raw_scan_rsp_len,
         p_msg->p_adv_data_cback = p_scan_rsp_data_cback;
         p_msg->p_raw_adv = p_raw_scan_rsp;
         p_msg->raw_adv_len = raw_scan_rsp_len;
+
+        bta_sys_sendmsg(p_msg);
+    }
+}
+
+/*******************************************************************************
+**
+** Function         BTA_DmUpdateDuplicateExceptionalList
+**
+** Description      This function is called to update duplicate scan exceptional list
+**
+** Parameters       subcode : add, remove or clean duplicate scan exceptional list.
+**                  type : device info type.
+**                  device_info:  device info
+**                  p_update_duplicate_ignore_list_cback :  update complete callback.
+**
+** Returns          None
+**
+*******************************************************************************/
+void BTA_DmUpdateDuplicateExceptionalList(UINT8 subcode, UINT32 type, BD_ADDR device_info, tBTA_UPDATE_DUPLICATE_EXCEPTIONAL_LIST_CMPL_CBACK p_update_duplicate_exceptional_list_cback)
+{
+    tBTA_DM_API_UPDATE_DUPLICATE_EXCEPTIONAL_LIST *p_msg;
+    if ((p_msg = (tBTA_DM_API_UPDATE_DUPLICATE_EXCEPTIONAL_LIST *)osi_malloc(sizeof(tBTA_DM_API_UPDATE_DUPLICATE_EXCEPTIONAL_LIST))) != NULL) {
+        p_msg->hdr.event = BTA_DM_API_UPDATE_DUPLICATE_EXCEPTIONAL_LIST_EVT;
+        p_msg->subcode = subcode;
+        p_msg->type = type;
+        p_msg->exceptional_list_cb = p_update_duplicate_exceptional_list_cback;
+        memcpy(p_msg->device_info, device_info, sizeof(BD_ADDR));
 
         bta_sys_sendmsg(p_msg);
     }
@@ -1629,6 +1723,30 @@ void BTA_DmBleConfigLocalPrivacy(BOOLEAN privacy_enable, tBTA_SET_LOCAL_PRIVACY_
 }
 
 #if BLE_INCLUDED == TRUE
+/*******************************************************************************
+**
+** Function         BTA_DmBleConfigLocalIcon
+**
+** Description      set gap local icon
+**
+** Parameters:      icon   - appearance value.
+**
+** Returns          void
+**
+*******************************************************************************/
+void BTA_DmBleConfigLocalIcon(uint16_t icon)
+{
+    tBTA_DM_API_LOCAL_ICON *p_msg;
+
+    if ((p_msg = (tBTA_DM_API_LOCAL_ICON *) osi_malloc(sizeof(tBTA_DM_API_LOCAL_ICON))) != NULL) {
+        memset (p_msg, 0, sizeof(tBTA_DM_API_LOCAL_ICON));
+
+        p_msg->hdr.event = BTA_DM_API_LOCAL_ICON_EVT;
+        p_msg->icon   = icon;
+        bta_sys_sendmsg(p_msg);
+    }
+}
+
 /*******************************************************************************
 **
 ** Function         BTA_BleEnableAdvInstance
@@ -2300,6 +2418,16 @@ extern void BTA_DmSetRandAddress(BD_ADDR rand_addr, tBTA_SET_RAND_ADDR_CBACK *p_
         p_msg->addr_type = BLE_ADDR_RANDOM;
         p_msg->p_set_rand_addr_cback = p_set_rand_addr_cback;
         //start sent the msg to the bta system control moudle
+        bta_sys_sendmsg(p_msg);
+    }
+}
+
+void BTA_DmClearRandAddress(void)
+{
+    tBTA_DM_APT_CLEAR_ADDR *p_msg;
+    if ((p_msg = (tBTA_DM_APT_CLEAR_ADDR *) osi_malloc(sizeof(tBTA_DM_APT_CLEAR_ADDR))) != NULL) {
+        memset(p_msg, 0, sizeof(tBTA_DM_APT_CLEAR_ADDR));
+        p_msg->hdr.event = BTA_DM_API_CLEAR_RAND_ADDR_EVT;
         bta_sys_sendmsg(p_msg);
     }
 }

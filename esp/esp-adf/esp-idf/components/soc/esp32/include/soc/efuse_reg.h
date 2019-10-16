@@ -17,11 +17,11 @@
 
 #include "soc.h"
 #define EFUSE_BLK0_RDATA0_REG          (DR_REG_EFUSE_BASE + 0x000)
-/* EFUSE_RD_FLASH_CRYPT_CNT : RO ;bitpos:[27:20] ;default: 8'b0 ; */
+/* EFUSE_RD_FLASH_CRYPT_CNT : RO ;bitpos:[26:20] ;default: 7'b0 ; */
 /*description: read for flash_crypt_cnt*/
-#define EFUSE_RD_FLASH_CRYPT_CNT  0x000000FF
+#define EFUSE_RD_FLASH_CRYPT_CNT  0x0000007F
 #define EFUSE_RD_FLASH_CRYPT_CNT_M  ((EFUSE_RD_FLASH_CRYPT_CNT_V)<<(EFUSE_RD_FLASH_CRYPT_CNT_S))
-#define EFUSE_RD_FLASH_CRYPT_CNT_V  0xFF
+#define EFUSE_RD_FLASH_CRYPT_CNT_V  0x7F
 #define EFUSE_RD_FLASH_CRYPT_CNT_S  20
 /* EFUSE_RD_EFUSE_RD_DIS : RO ;bitpos:[19:16] ;default: 4'b0 ; */
 /*description: read for efuse_rd_disable*/
@@ -91,15 +91,21 @@
 #define EFUSE_RD_BLK3_PART_RESERVE_M  ((EFUSE_RD_BLK3_PART_RESERVE_V)<<(EFUSE_RD_BLK3_PART_RESERVE_S))
 #define EFUSE_RD_BLK3_PART_RESERVE_V  0x1
 #define EFUSE_RD_BLK3_PART_RESERVE_S  14
-/* EFUSE_RD_CHIP_VER_RESERVE : R/W ;bitpos:[13:12] ;default: 2'b0 ; */
-/*description: */
-#define EFUSE_RD_CHIP_VER_RESERVE  0x00000003
-#define EFUSE_RD_CHIP_VER_RESERVE_M  ((EFUSE_RD_CHIP_VER_RESERVE_V)<<(EFUSE_RD_CHIP_VER_RESERVE_S))
-#define EFUSE_RD_CHIP_VER_RESERVE_V  0x3
-#define EFUSE_RD_CHIP_VER_RESERVE_S  12
-/* EFUSE_RD_CHIP_VER : R/W ;bitpos:[11:9] ;default: 3'b0 ; */
+/* EFUSE_RD_CHIP_CPU_FREQ_RATED : R/W ;bitpos:[13] ;default: 1'b0 ; */
+/*description: If set, the ESP32's maximum CPU frequency has been rated*/
+#define EFUSE_RD_CHIP_CPU_FREQ_RATED  (BIT(13))
+#define EFUSE_RD_CHIP_CPU_FREQ_RATED_M  ((EFUSE_RD_CHIP_CPU_FREQ_RATED_V)<<(EFUSE_RD_CHIP_CPU_FREQ_RATED_S))
+#define EFUSE_RD_CHIP_CPU_FREQ_RATED_V  0x1
+#define EFUSE_RD_CHIP_CPU_FREQ_RATED_S  13
+/* EFUSE_RD_CHIP_CPU_FREQ_LOW : R/W ;bitpos:[12] ;default: 1'b0 ; */
+/*description: If set alongside EFUSE_RD_CHIP_CPU_FREQ_RATED, the ESP32's max CPU frequency is rated for 160MHz. 240MHz otherwise*/
+#define EFUSE_RD_CHIP_CPU_FREQ_LOW  (BIT(12))
+#define EFUSE_RD_CHIP_CPU_FREQ_LOW_M  ((EFUSE_RD_CHIP_CPU_FREQ_LOW_V)<<(EFUSE_RD_CHIP_CPU_FREQ_LOW_S))
+#define EFUSE_RD_CHIP_CPU_FREQ_LOW_V  0x1
+#define EFUSE_RD_CHIP_CPU_FREQ_LOW_S  12
+/* EFUSE_RD_CHIP_VER_PKG : R/W ;bitpos:[11:9] ;default: 3'b0 ; */
 /*description: chip package */
-#define EFUSE_RD_CHIP_VER  0x00000007
+#define EFUSE_RD_CHIP_VER_PKG  0x00000007
 #define EFUSE_RD_CHIP_VER_PKG_M  ((EFUSE_RD_CHIP_VER_PKG_V)<<(EFUSE_RD_CHIP_VER_PKG_S))
 #define EFUSE_RD_CHIP_VER_PKG_V  0x7
 #define EFUSE_RD_CHIP_VER_PKG_S  9
@@ -292,12 +298,15 @@
 #define EFUSE_RD_CODING_SCHEME_V  0x3
 #define EFUSE_RD_CODING_SCHEME_S  0
 
+#define EFUSE_CODING_SCHEME_VAL_NONE 0x0
+#define EFUSE_CODING_SCHEME_VAL_34   0x1
+
 #define EFUSE_BLK0_WDATA0_REG          (DR_REG_EFUSE_BASE + 0x01c)
-/* EFUSE_FLASH_CRYPT_CNT : R/W ;bitpos:[27:20] ;default: 8'b0 ; */
+/* EFUSE_FLASH_CRYPT_CNT : R/W ;bitpos:[26:20] ;default: 7'b0 ; */
 /*description: program for flash_crypt_cnt*/
-#define EFUSE_FLASH_CRYPT_CNT  0x000000FF
+#define EFUSE_FLASH_CRYPT_CNT  0x0000007F
 #define EFUSE_FLASH_CRYPT_CNT_M  ((EFUSE_FLASH_CRYPT_CNT_V)<<(EFUSE_FLASH_CRYPT_CNT_S))
-#define EFUSE_FLASH_CRYPT_CNT_V  0xFF
+#define EFUSE_FLASH_CRYPT_CNT_V  0x7F
 #define EFUSE_FLASH_CRYPT_CNT_S  20
 /* EFUSE_RD_DIS : R/W ;bitpos:[19:16] ;default: 4'b0 ; */
 /*description: program for efuse_rd_disable*/
@@ -341,18 +350,29 @@
 #define EFUSE_BLK3_PART_RESERVE_M  ((EFUSE_BLK3_PART_RESERVE_V)<<(EFUSE_BLK3_PART_RESERVE_S))
 #define EFUSE_BLK3_PART_RESERVE_V  0x1
 #define EFUSE_BLK3_PART_RESERVE_S  14
-/* EFUSE_CHIP_VER_RESERVE : R/W ;bitpos:[13:12] ;default: 2'b0 ; */
-/*description: */
-#define EFUSE_CHIP_VER_RESERVE  0x00000003
-#define EFUSE_CHIP_VER_RESERVE_M  ((EFUSE_CHIP_VER_RESERVE_V)<<(EFUSE_CHIP_VER_RESERVE_S))
-#define EFUSE_CHIP_VER_RESERVE_V  0x3
-#define EFUSE_CHIP_VER_RESERVE_S  12
-/* EFUSE_CHIP_VER : R/W ;bitpos:[11:9] ;default: 3'b0 ; */
+/* EFUSE_CHIP_CPU_FREQ_RATED : R/W ;bitpos:[13] ;default: 1'b0 ; */
+/*description: If set, the ESP32's maximum CPU frequency has been rated*/
+#define EFUSE_CHIP_CPU_FREQ_RATED  (BIT(13))
+#define EFUSE_CHIP_CPU_FREQ_RATED_M  ((EFUSE_CHIP_CPU_FREQ_RATED_V)<<(EFUSE_CHIP_CPU_FREQ_RATED_S))
+#define EFUSE_CHIP_CPU_FREQ_RATED_V  0x1
+#define EFUSE_CHIP_CPU_FREQ_RATED_S  13
+/* EFUSE_CHIP_CPU_FREQ_LOW : R/W ;bitpos:[12] ;default: 1'b0 ; */
+/*description: If set alongside EFUSE_CHIP_CPU_FREQ_RATED, the ESP32's max CPU frequency is rated for 160MHz. 240MHz otherwise*/
+#define EFUSE_CHIP_CPU_FREQ_LOW  (BIT(12))
+#define EFUSE_CHIP_CPU_FREQ_LOW_M  ((EFUSE_CHIP_CPU_FREQ_LOW_V)<<(EFUSE_CHIP_CPU_FREQ_LOW_S))
+#define EFUSE_CHIP_CPU_FREQ_LOW_V  0x1
+#define EFUSE_CHIP_CPU_FREQ_LOW_S  12
+/* EFUSE_CHIP_VER_PKG : R/W ;bitpos:[11:9] ;default: 3'b0 ; */
 /*description: */
 #define EFUSE_CHIP_VER_PKG  0x00000007
 #define EFUSE_CHIP_VER_PKG_M  ((EFUSE_CHIP_VER_PKG_V)<<(EFUSE_CHIP_VER_PKG_S))
 #define EFUSE_CHIP_VER_PKG_V  0x7
 #define EFUSE_CHIP_VER_PKG_S  9
+#define EFUSE_CHIP_VER_PKG_ESP32D0WDQ6  0
+#define EFUSE_CHIP_VER_PKG_ESP32D0WDQ5  1
+#define EFUSE_CHIP_VER_PKG_ESP32D2WDQ5  2
+#define EFUSE_CHIP_VER_PKG_ESP32PICOD2  4
+#define EFUSE_CHIP_VER_PKG_ESP32PICOD4  5
 /* EFUSE_SPI_PAD_CONFIG_HD : R/W ;bitpos:[8:4] ;default: 5'b0 ; */
 /*description: program for SPI_pad_config_hd*/
 #define EFUSE_SPI_PAD_CONFIG_HD  0x0000001F

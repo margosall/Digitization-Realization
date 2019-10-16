@@ -22,20 +22,24 @@
  *
  *****************************************************************************/
 
-#include "bt_target.h"
+#include "common/bt_target.h"
 
-#include "btm_api.h"
+#include "stack/btm_api.h"
 #include "btm_int.h"
-#include "rfcdefs.h"
-#include "port_api.h"
-#include "port_ext.h"
+#include "stack/rfcdefs.h"
+#include "stack/port_api.h"
+#include "stack/port_ext.h"
 #include "port_int.h"
 #include "rfc_int.h"
-#include "btu.h"
-#include "bt_defs.h"
+#include "stack/btu.h"
+#include "common/bt_defs.h"
+
+#include "osi/allocator.h"
+#include "osi/mutex.h"
 
 #include <string.h>
 
+#if (defined RFCOMM_INCLUDED && RFCOMM_INCLUDED == TRUE)
 /*******************************************************************************
 **
 ** Function         rfc_calc_fcs
@@ -171,7 +175,7 @@ tRFC_MCB *rfc_alloc_multiplexer_channel (BD_ADDR bd_addr, BOOLEAN is_initiator)
             RFCOMM_TRACE_DEBUG("rfc_alloc_multiplexer_channel:is_initiator:%d, create new p_mcb:%p, index:%d",
                                is_initiator, &rfc_cb.port.rfc_mcb[j], j);
 
-            p_mcb->cmd_q = fixed_queue_new(SIZE_MAX);
+            p_mcb->cmd_q = fixed_queue_new(QUEUE_SIZE_MAX);
 
             p_mcb->is_initiator = is_initiator;
 
@@ -184,7 +188,9 @@ tRFC_MCB *rfc_alloc_multiplexer_channel (BD_ADDR bd_addr, BOOLEAN is_initiator)
     return (NULL);
 }
 
-
+void osi_free_fun(void *p){
+    osi_free(p);
+}
 /*******************************************************************************
 **
 ** Function         rfc_release_multiplexer_channel
@@ -198,8 +204,7 @@ void rfc_release_multiplexer_channel (tRFC_MCB *p_mcb)
 
     rfc_timer_free (p_mcb);
 
-
-    fixed_queue_free(p_mcb->cmd_q, osi_free);
+    fixed_queue_free(p_mcb->cmd_q, osi_free_fun);
 
     memset (p_mcb, 0, sizeof (tRFC_MCB));
     p_mcb->state = RFC_MX_STATE_IDLE;
@@ -500,3 +505,6 @@ void rfc_check_send_cmd(tRFC_MCB *p_mcb, BT_HDR *p_buf)
         L2CA_DataWrite (p_mcb->lcid, p);
     }
 }
+
+
+#endif ///(defined RFCOMM_INCLUDED && RFCOMM_INCLUDED == TRUE)

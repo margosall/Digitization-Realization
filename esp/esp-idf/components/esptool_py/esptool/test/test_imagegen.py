@@ -258,13 +258,12 @@ class ESP32FlashHeaderTests(BaseTestCase):
         ELF="esp32-app-template.elf"
         BIN="esp32-app-template.bin"
         try:
-            self.run_elf2image("esp32", ELF, extra_args=["--flash_size", "16MB", "--flash_mode", "dio", "--min-rev", "1"])
+            self.run_elf2image("esp32", ELF, extra_args=["--flash_size", "16MB", "--flash_mode", "dio"])
             with open(BIN, "rb") as f:
-                header = f.read(24)
+                header = f.read(4)
                 self.assertEqualHex(0xe9, header[0])
                 self.assertEqualHex(0x02, header[2])
                 self.assertEqualHex(0x40, header[3])
-                self.assertEqualHex(0x01, header[14]) # chip revision
         finally:
             try_delete(BIN)
 

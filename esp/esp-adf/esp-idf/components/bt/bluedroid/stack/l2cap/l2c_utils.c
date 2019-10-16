@@ -25,18 +25,18 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "allocator.h"
-#include "controller.h"
-#include "bt_types.h"
-#include "hcimsgs.h"
-#include "l2cdefs.h"
+#include "osi/allocator.h"
+#include "device/controller.h"
+#include "stack/bt_types.h"
+#include "stack/hcimsgs.h"
+#include "stack/l2cdefs.h"
 #include "l2c_int.h"
-#include "hcidefs.h"
-#include "btu.h"
-#include "btm_api.h"
+#include "stack/hcidefs.h"
+#include "stack/btu.h"
+#include "stack/btm_api.h"
 #include "btm_int.h"
-#include "hcidefs.h"
-#include "allocator.h"
+#include "stack/hcidefs.h"
+#include "osi/allocator.h"
 
 /*******************************************************************************
 **
@@ -57,7 +57,7 @@ tL2C_LCB *l2cu_allocate_lcb (BD_ADDR p_bd_addr, BOOLEAN is_bonding, tBT_TRANSPOR
             btu_free_timer(&p_lcb->timer_entry);
             btu_free_timer(&p_lcb->info_timer_entry);
             btu_free_timer(&p_lcb->upda_con_timer);
-            
+
             memset (p_lcb, 0, sizeof (tL2C_LCB));
             memcpy (p_lcb->remote_bd_addr, p_bd_addr, BD_ADDR_LEN);
 
@@ -74,7 +74,7 @@ tL2C_LCB *l2cu_allocate_lcb (BD_ADDR p_bd_addr, BOOLEAN is_bonding, tBT_TRANSPOR
 #if (BLE_INCLUDED == TRUE)
             p_lcb->transport       = transport;
             p_lcb->tx_data_len     = controller_get_interface()->get_ble_default_data_packet_length();
-            p_lcb->le_sec_pending_q = fixed_queue_new(SIZE_MAX);
+            p_lcb->le_sec_pending_q = fixed_queue_new(QUEUE_SIZE_MAX);
 
             if (transport == BT_TRANSPORT_LE) {
                 l2cb.num_ble_links_active++;
@@ -86,6 +86,9 @@ tL2C_LCB *l2cu_allocate_lcb (BD_ADDR p_bd_addr, BOOLEAN is_bonding, tBT_TRANSPOR
                 l2c_link_adjust_allocation();
             }
             p_lcb->link_xmit_data_q = list_new(NULL);
+#if (C2H_FLOW_CONTROL_INCLUDED == TRUE)
+            p_lcb->completed_packets = 0;
+#endif ///C2H_FLOW_CONTROL_INCLUDED == TRUE
             return (p_lcb);
         }
     }
@@ -137,7 +140,7 @@ void l2cu_release_lcb (tL2C_LCB *p_lcb)
     memset(&p_lcb->info_timer_entry, 0, sizeof(TIMER_LIST_ENT));
     btu_free_timer(&p_lcb->upda_con_timer);
     memset(&p_lcb->upda_con_timer, 0, sizeof(TIMER_LIST_ENT));
-        
+
     /* Release any unfinished L2CAP packet on this link */
     if (p_lcb->p_hcit_rcv_acl) {
         osi_free(p_lcb->p_hcit_rcv_acl);
@@ -148,8 +151,10 @@ void l2cu_release_lcb (tL2C_LCB *p_lcb)
 #if (BLE_INCLUDED == TRUE)
     if (p_lcb->transport == BT_TRANSPORT_BR_EDR)
 #endif
+    {
         /* Release all SCO links */
         btm_remove_sco_links(p_lcb->remote_bd_addr);
+    }
 #endif
 
     if (p_lcb->sent_not_acked > 0) {
@@ -186,12 +191,13 @@ void l2cu_release_lcb (tL2C_LCB *p_lcb)
     }
 
     /* Tell BTM Acl management the link was removed */
-    if ((p_lcb->link_state == LST_CONNECTED) || (p_lcb->link_state == LST_DISCONNECTING))
+    if ((p_lcb->link_state == LST_CONNECTED) || (p_lcb->link_state == LST_DISCONNECTING)) {
 #if (BLE_INCLUDED == TRUE)
         btm_acl_removed (p_lcb->remote_bd_addr, p_lcb->transport);
 #else
         btm_acl_removed (p_lcb->remote_bd_addr, BT_TRANSPORT_BR_EDR);
 #endif
+    }
 
     /* Release any held buffers */
     if (p_lcb->link_xmit_data_q) {
@@ -243,13 +249,19 @@ void l2cu_release_lcb (tL2C_LCB *p_lcb)
         while (!fixed_queue_is_empty(p_lcb->le_sec_pending_q))
         {
             tL2CAP_SEC_DATA *p_buf = (tL2CAP_SEC_DATA*) fixed_queue_dequeue(p_lcb->le_sec_pending_q);
-            if (p_buf->p_callback)
+            if (p_buf->p_callback) {
                 p_buf->p_callback(p_lcb->remote_bd_addr, p_lcb->transport, p_buf->p_ref_data, BTM_DEV_RESET);
+            }
             osi_free(p_buf);
         }
         fixed_queue_free(p_lcb->le_sec_pending_q, NULL);
         p_lcb->le_sec_pending_q = NULL;
     }
+
+#if (C2H_FLOW_CONTROL_INCLUDED == TRUE)
+    p_lcb->completed_packets = 0;
+#endif ///C2H_FLOW_CONTROL_INCLUDED == TRUE
+
 }
 
 
@@ -950,7 +962,7 @@ void l2cu_send_peer_disc_rsp (tL2C_LCB *p_lcb, UINT8 remote_id, UINT16 local_cid
         L2CAP_TRACE_WARNING("lcb already released\n");
         return;
     }
-    
+
     if ((p_buf = l2cu_build_header(p_lcb, L2CAP_DISC_RSP_LEN, L2CAP_CMD_DISC_RSP, remote_id)) == NULL) {
         L2CAP_TRACE_WARNING ("L2CAP - no buffer for disc_rsp");
         return;
@@ -1488,7 +1500,7 @@ tL2C_CCB *l2cu_allocate_ccb (tL2C_LCB *p_lcb, UINT16 cid)
     btu_free_quick_timer(&p_ccb->fcrb.ack_timer);
     memset(&p_ccb->fcrb.ack_timer, 0, sizeof(TIMER_LIST_ENT));
     p_ccb->fcrb.ack_timer.param  = (TIMER_PARAM_TYPE)p_ccb;
-    
+
     btu_free_quick_timer(&p_ccb->fcrb.mon_retrans_timer);
     memset(&p_ccb->fcrb.mon_retrans_timer, 0, sizeof(TIMER_LIST_ENT));
     p_ccb->fcrb.mon_retrans_timer.param  = (TIMER_PARAM_TYPE)p_ccb;
@@ -1511,11 +1523,11 @@ tL2C_CCB *l2cu_allocate_ccb (tL2C_LCB *p_lcb, UINT16 cid)
     p_ccb->max_rx_mtu                = L2CAP_MTU_SIZE;
     p_ccb->tx_mps                    = L2CAP_FCR_TX_BUF_SIZE - 32;
 
-    p_ccb->xmit_hold_q  = fixed_queue_new(SIZE_MAX);
+    p_ccb->xmit_hold_q  = fixed_queue_new(QUEUE_SIZE_MAX);
 #if (CLASSIC_BT_INCLUDED == TRUE)
-    p_ccb->fcrb.srej_rcv_hold_q = fixed_queue_new(SIZE_MAX);
-    p_ccb->fcrb.retrans_q = fixed_queue_new(SIZE_MAX);
-    p_ccb->fcrb.waiting_for_ack_q = fixed_queue_new(SIZE_MAX);
+    p_ccb->fcrb.srej_rcv_hold_q = fixed_queue_new(QUEUE_SIZE_MAX);
+    p_ccb->fcrb.retrans_q = fixed_queue_new(QUEUE_SIZE_MAX);
+    p_ccb->fcrb.waiting_for_ack_q = fixed_queue_new(QUEUE_SIZE_MAX);
 #endif  ///CLASSIC_BT_INCLUDED == TRUE
 
     p_ccb->cong_sent    = FALSE;
@@ -1649,7 +1661,7 @@ void l2cu_release_ccb (tL2C_CCB *p_ccb)
     p_ccb->fcrb.retrans_q = NULL;
     p_ccb->fcrb.waiting_for_ack_q = NULL;
 #endif  ///CLASSIC_BT_INCLUDED == TRUE
-  
+
 
 #if (CLASSIC_BT_INCLUDED == TRUE)
     l2c_fcr_cleanup (p_ccb);
@@ -1872,8 +1884,9 @@ tL2C_RCB *l2cu_find_ble_rcb_by_psm (UINT16 psm)
 
     for (xx = 0; xx < BLE_MAX_L2CAP_CLIENTS; xx++, p_rcb++)
     {
-        if ((p_rcb->in_use) && (p_rcb->psm == psm))
+        if ((p_rcb->in_use) && (p_rcb->psm == psm)) {
             return (p_rcb);
+        }
     }
 
     /* If here, no match found */
@@ -2203,13 +2216,17 @@ BOOLEAN l2cu_create_conn (tL2C_LCB *p_lcb, tBT_TRANSPORT transport)
 #if (BLE_INCLUDED == TRUE)
     tBT_DEVICE_TYPE     dev_type;
     tBLE_ADDR_TYPE      addr_type = p_lcb->open_addr_type;
-    BTM_ReadDevInfo(p_lcb->remote_bd_addr, &dev_type, &addr_type);
+    if(addr_type == BLE_ADDR_UNKNOWN_TYPE) {
+        BTM_ReadDevInfo(p_lcb->remote_bd_addr, &dev_type, &addr_type);
+    }
 
     if (transport == BT_TRANSPORT_LE) {
         if (!controller_get_interface()->supports_ble()) {
             return FALSE;
         }
-
+        if(addr_type > BLE_ADDR_TYPE_MAX) {
+            addr_type = BLE_ADDR_PUBLIC;
+        }
         p_lcb->ble_addr_type = addr_type;
         p_lcb->transport = BT_TRANSPORT_LE;
 
@@ -2545,10 +2562,10 @@ void l2cu_resubmit_pending_sec_req (BD_ADDR p_bda)
                     l2c_csm_execute (p_ccb, L2CEVT_SEC_RE_SEND_CMD, NULL);
                 }
             }
-        }       
+        }
     }
 }
-#endif  ///CLASSIC_BT_INCLUDED == TRUE 
+#endif  ///CLASSIC_BT_INCLUDED == TRUE
 
 #if L2CAP_CONFORMANCE_TESTING == TRUE
 /*******************************************************************************
@@ -2585,7 +2602,7 @@ void l2cu_adjust_out_mps (tL2C_CCB *p_ccb)
 
     if (packet_size <= (L2CAP_PKT_OVERHEAD + L2CAP_FCR_OVERHEAD + L2CAP_SDU_LEN_OVERHEAD + L2CAP_FCS_LEN)) {
         /* something is very wrong */
-        L2CAP_TRACE_ERROR ("l2cu_adjust_out_mps bad packet size: %u  will use MPS: %u", packet_size, p_ccb->peer_cfg.fcr.mps);
+        L2CAP_TRACE_DEBUG ("l2cu_adjust_out_mps bad packet size: %u  will use MPS: %u", packet_size, p_ccb->peer_cfg.fcr.mps);
         p_ccb->tx_mps = p_ccb->peer_cfg.fcr.mps;
     } else {
         packet_size -= (L2CAP_PKT_OVERHEAD + L2CAP_FCR_OVERHEAD + L2CAP_SDU_LEN_OVERHEAD + L2CAP_FCS_LEN);
@@ -2850,7 +2867,7 @@ void l2cu_process_fixed_disc_cback (tL2C_LCB *p_lcb)
 #endif
             }
         } else if ( (peer_channel_mask & (1 << (xx + L2CAP_FIRST_FIXED_CHNL)))
-                    && (l2cb.fixed_reg[xx].pL2CA_FixedConn_Cb != NULL) )
+                    && (l2cb.fixed_reg[xx].pL2CA_FixedConn_Cb != NULL) ) {
 #if BLE_INCLUDED == TRUE
             (*l2cb.fixed_reg[xx].pL2CA_FixedConn_Cb)(xx + L2CAP_FIRST_FIXED_CHNL,
                     p_lcb->remote_bd_addr, FALSE, p_lcb->disc_reason, p_lcb->transport);
@@ -2858,6 +2875,7 @@ void l2cu_process_fixed_disc_cback (tL2C_LCB *p_lcb)
             (*l2cb.fixed_reg[xx].pL2CA_FixedConn_Cb)(xx + L2CAP_FIRST_FIXED_CHNL,
                     p_lcb->remote_bd_addr, FALSE, p_lcb->disc_reason, BT_TRANSPORT_BR_EDR);
 #endif
+        }
     }
 #endif
 }
@@ -2948,8 +2966,9 @@ void l2cu_send_peer_ble_credit_based_conn_req (tL2C_CCB *p_ccb)
     UINT16 mps;
     UINT16 initial_credit;
 
-    if (!p_ccb)
+    if (!p_ccb) {
         return;
+    }
     p_lcb = p_ccb->p_lcb;
 
     /* Create an identifier for this packet */
@@ -3070,8 +3089,9 @@ void l2cu_send_peer_ble_flow_control_credit(tL2C_CCB *p_ccb, UINT16 credit_value
     UINT8   *p;
     tL2C_LCB *p_lcb = NULL;
 
-    if (!p_ccb)
+    if (!p_ccb) {
         return;
+    }
     p_lcb = p_ccb->p_lcb;
 
     /* Create an identifier for this packet */
@@ -3113,8 +3133,9 @@ void l2cu_send_peer_ble_credit_based_disconn_req(tL2C_CCB *p_ccb)
     tL2C_LCB *p_lcb = NULL;
     L2CAP_TRACE_DEBUG ("%s",__func__);
 
-    if (!p_ccb)
+    if (!p_ccb) {
         return;
+    }
     p_lcb = p_ccb->p_lcb;
 
     /* Create an identifier for this packet */
@@ -3140,6 +3161,35 @@ void l2cu_send_peer_ble_credit_based_disconn_req(tL2C_CCB *p_ccb)
 
 #endif /* BLE_INCLUDED == TRUE */
 
+#if (C2H_FLOW_CONTROL_INCLUDED == TRUE)
+/*******************************************************************************
+**
+** Function         l2cu_find_completed_packets
+**
+** Description      Find the completed packets,
+**                  Then set it to zero
+**
+** Returns          The num of handles
+**
+*******************************************************************************/
+UINT8 l2cu_find_completed_packets(UINT16 *handles, UINT16 *num_packets)
+{
+    int         xx;
+    UINT8       num = 0;
+    tL2C_LCB    *p_lcb = &l2cb.lcb_pool[0];
+
+    for (xx = 0; xx < MAX_L2CAP_LINKS; xx++, p_lcb++) {
+        if ((p_lcb->in_use) && (p_lcb->completed_packets > 0)) {
+            *(handles++) = p_lcb->handle;
+            *(num_packets++) = p_lcb->completed_packets;
+            num++;
+            p_lcb->completed_packets = 0;
+        }
+    }
+
+    return num;
+}
+#endif ///C2H_FLOW_CONTROL_INCLUDED == TRUE
 
 /*******************************************************************************
 ** Functions used by both Full and Light Stack
@@ -3428,7 +3478,7 @@ BT_HDR *l2cu_get_next_buffer_to_send (tL2C_LCB *p_lcb)
                 return (p_buf);
             }
 #else
-            continue;          
+            continue;
 #endif  ///CLASSIC_BT_INCLUDED == TRUE
 
         } else {

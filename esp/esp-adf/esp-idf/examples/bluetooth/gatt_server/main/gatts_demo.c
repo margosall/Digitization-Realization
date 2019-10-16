@@ -1,16 +1,10 @@
-// Copyright 2015-2017 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+/*
+   This example code is in the Public Domain (or CC0 licensed, at your option.)
 
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+   Unless required by applicable law or agreed to in writing, this
+   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+   CONDITIONS OF ANY KIND, either express or implied.
+*/
 
 /****************************************************************************
 *
@@ -106,8 +100,8 @@ static esp_ble_adv_data_t adv_data = {
     .set_scan_rsp = false,
     .include_name = true,
     .include_txpower = true,
-    .min_interval = 0x20,
-    .max_interval = 0x40,
+    .min_interval = 0x0006, //slave connection min interval, Time = min_interval * 1.25 msec
+    .max_interval = 0x0010, //slave connection max interval, Time = max_interval * 1.25 msec
     .appearance = 0x00,
     .manufacturer_len = 0, //TEST_MANUFACTURER_DATA_LEN,
     .p_manufacturer_data =  NULL, //&test_manufacturer[0],
@@ -122,8 +116,8 @@ static esp_ble_adv_data_t scan_rsp_data = {
     .set_scan_rsp = true,
     .include_name = true,
     .include_txpower = true,
-    .min_interval = 0x20,
-    .max_interval = 0x40,
+    .min_interval = 0x0006,
+    .max_interval = 0x0010,
     .appearance = 0x00,
     .manufacturer_len = 0, //TEST_MANUFACTURER_DATA_LEN,
     .p_manufacturer_data =  NULL, //&test_manufacturer[0],
@@ -234,7 +228,7 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
         }
         break;
     case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
-         ESP_LOGI(GATTS_TAG, "update connetion params status = %d, min_int = %d, max_int = %d,conn_int = %d,latency = %d, timeout = %d",
+         ESP_LOGI(GATTS_TAG, "update connection params status = %d, min_int = %d, max_int = %d,conn_int = %d,latency = %d, timeout = %d",
                   param->update_conn_params.status,
                   param->update_conn_params.min_int,
                   param->update_conn_params.max_int,
@@ -487,11 +481,11 @@ static void gatts_profile_a_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
         break;
     }
     case ESP_GATTS_DISCONNECT_EVT:
-        ESP_LOGI(GATTS_TAG, "ESP_GATTS_DISCONNECT_EVT");
+        ESP_LOGI(GATTS_TAG, "ESP_GATTS_DISCONNECT_EVT, disconnect reason 0x%x", param->disconnect.reason);
         esp_ble_gap_start_advertising(&adv_params);
         break;
     case ESP_GATTS_CONF_EVT:
-        ESP_LOGI(GATTS_TAG, "ESP_GATTS_CONF_EVT, status %d", param->conf.status);
+        ESP_LOGI(GATTS_TAG, "ESP_GATTS_CONF_EVT, status %d attr_handle %d", param->conf.status, param->conf.handle);
         if (param->conf.status != ESP_GATT_OK){
             esp_log_buffer_hex(GATTS_TAG, param->conf.value, param->conf.len);
         }
@@ -634,7 +628,7 @@ static void gatts_profile_b_event_handler(esp_gatts_cb_event_t event, esp_gatt_i
         gl_profile_tab[PROFILE_B_APP_ID].conn_id = param->connect.conn_id;
         break;
     case ESP_GATTS_CONF_EVT:
-        ESP_LOGI(GATTS_TAG, "ESP_GATTS_CONF_EVT status %d", param->conf.status);
+        ESP_LOGI(GATTS_TAG, "ESP_GATTS_CONF_EVT status %d attr_handle %d", param->conf.status, param->conf.handle);
         if (param->conf.status != ESP_GATT_OK){
             esp_log_buffer_hex(GATTS_TAG, param->conf.value, param->conf.len);
         }
@@ -685,7 +679,7 @@ void app_main()
 
     // Initialize NVS.
     ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES) {
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
@@ -696,23 +690,23 @@ void app_main()
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     ret = esp_bt_controller_init(&bt_cfg);
     if (ret) {
-        ESP_LOGE(GATTS_TAG, "%s initialize controller failed\n", __func__);
+        ESP_LOGE(GATTS_TAG, "%s initialize controller failed: %s\n", __func__, esp_err_to_name(ret));
         return;
     }
 
     ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
     if (ret) {
-        ESP_LOGE(GATTS_TAG, "%s enable controller failed\n", __func__);
+        ESP_LOGE(GATTS_TAG, "%s enable controller failed: %s\n", __func__, esp_err_to_name(ret));
         return;
     }
     ret = esp_bluedroid_init();
     if (ret) {
-        ESP_LOGE(GATTS_TAG, "%s init bluetooth failed\n", __func__);
+        ESP_LOGE(GATTS_TAG, "%s init bluetooth failed: %s\n", __func__, esp_err_to_name(ret));
         return;
     }
     ret = esp_bluedroid_enable();
     if (ret) {
-        ESP_LOGE(GATTS_TAG, "%s enable bluetooth failed\n", __func__);
+        ESP_LOGE(GATTS_TAG, "%s enable bluetooth failed: %s\n", __func__, esp_err_to_name(ret));
         return;
     }
 

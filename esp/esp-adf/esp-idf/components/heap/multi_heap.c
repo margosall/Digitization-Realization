@@ -54,6 +54,14 @@ size_t multi_heap_free_size(multi_heap_handle_t heap)
 size_t multi_heap_minimum_free_size(multi_heap_handle_t heap)
     __attribute__((alias("multi_heap_minimum_free_size_impl")));
 
+void *multi_heap_get_block_address(multi_heap_block_handle_t block)
+    __attribute__((alias("multi_heap_get_block_address_impl")));
+
+void *multi_heap_get_block_owner(multi_heap_block_handle_t block)
+{
+    return NULL;
+}
+
 #endif
 
 #define ALIGN(X) ((X) & ~(sizeof(void *)-1))
@@ -304,27 +312,35 @@ static void split_if_necessary(heap_t *heap, heap_block_t *block, size_t size, h
     prev_free_block->next_free = new_block;
 }
 
+void *multi_heap_get_block_address_impl(multi_heap_block_handle_t block)
+{
+    return ((char *)block + offsetof(heap_block_t, data));
+}
+
 size_t multi_heap_get_allocated_size_impl(multi_heap_handle_t heap, void *p)
 {
     heap_block_t *pb = get_block(p);
 
     assert_valid_block(heap, pb);
-    MULTI_HEAP_ASSERT(!is_free(pb), pb); // block should be free
+    MULTI_HEAP_ASSERT(!is_free(pb), pb); // block shouldn't be free
     return block_data_size(pb);
 }
 
-multi_heap_handle_t multi_heap_register_impl(void *start, size_t size)
+multi_heap_handle_t multi_heap_register_impl(void *start_ptr, size_t size)
 {
-    heap_t *heap = (heap_t *)ALIGN_UP((intptr_t)start);
-    uintptr_t end = ALIGN((uintptr_t)start + size);
-    if (end - (uintptr_t)start < sizeof(heap_t) + 2*sizeof(heap_block_t)) {
+    uintptr_t start = ALIGN_UP((uintptr_t)start_ptr);
+    uintptr_t end = ALIGN((uintptr_t)start_ptr + size);
+    heap_t *heap = (heap_t *)start;
+    size = end - start;
+
+    if (end < start || size < sizeof(heap_t) + 2*sizeof(heap_block_t)) {
         return NULL; /* 'size' is too small to fit a heap here */
     }
     heap->lock = NULL;
     heap->last_block = (heap_block_t *)(end - sizeof(heap_block_t));
 
     /* first 'real' (allocatable) free block goes after the heap structure */
-    heap_block_t *first_free_block = (heap_block_t *)((intptr_t)start + sizeof(heap_t));
+    heap_block_t *first_free_block = (heap_block_t *)(start + sizeof(heap_t));
     first_free_block->header = (intptr_t)heap->last_block | BLOCK_FREE_FLAG;
     first_free_block->next_free = heap->last_block;
 
@@ -343,7 +359,7 @@ multi_heap_handle_t multi_heap_register_impl(void *start, size_t size)
        - minus header of first_free_block
        - minus whole block at heap->last_block
     */
-    heap->free_bytes = ALIGN(size) - sizeof(heap_t) - sizeof(first_free_block->header) - sizeof(heap_block_t);
+    heap->free_bytes = size - sizeof(heap_t) - sizeof(first_free_block->header) - sizeof(heap_block_t);
     heap->minimum_free_bytes = heap->free_bytes;
 
     return heap;
@@ -362,6 +378,27 @@ void inline multi_heap_internal_lock(multi_heap_handle_t heap)
 void inline multi_heap_internal_unlock(multi_heap_handle_t heap)
 {
     MULTI_HEAP_UNLOCK(heap->lock);
+}
+
+multi_heap_block_handle_t multi_heap_get_first_block(multi_heap_handle_t heap)
+{
+    return &heap->first_block;
+}
+
+multi_heap_block_handle_t multi_heap_get_next_block(multi_heap_handle_t heap, multi_heap_block_handle_t block)
+{
+    heap_block_t *next = get_next_block(block);
+    /* check for valid free last block to avoid assert in assert_valid_block */
+    if (next == heap->last_block && is_last_block(next) && is_free(next)) {
+        return NULL;
+    }
+    assert_valid_block(heap, next);
+    return next;
+}
+
+bool multi_heap_is_free(multi_heap_block_handle_t block)
+{
+    return is_free(block);
 }
 
 void *multi_heap_malloc_impl(multi_heap_handle_t heap, size_t size)

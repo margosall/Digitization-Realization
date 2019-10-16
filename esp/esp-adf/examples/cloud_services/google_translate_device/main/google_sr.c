@@ -107,6 +107,8 @@ static esp_err_t _http_stream_writer_event_handle(http_stream_event_msg_t *msg)
         sr->sr_total_write = 0;
         sr->is_begin = true;
         sr->remain_len = 0;
+        esp_http_client_set_method(http, HTTP_METHOD_POST);
+        esp_http_client_set_post_field(http, NULL, -1); // Chunk content
         esp_http_client_set_header(http, "Content-Type", "application/json");
         return ESP_OK;
     }
@@ -264,7 +266,7 @@ esp_err_t google_sr_destroy(google_sr_handle_t sr)
     return ESP_OK;
 }
 
-esp_err_t googe_sr_set_listener(google_sr_handle_t sr, audio_event_iface_handle_t listener)
+esp_err_t google_sr_set_listener(google_sr_handle_t sr, audio_event_iface_handle_t listener)
 {
     if (listener) {
         audio_pipeline_set_listener(sr->pipeline, listener);

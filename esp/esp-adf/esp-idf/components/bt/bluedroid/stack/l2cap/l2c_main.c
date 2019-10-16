@@ -26,15 +26,15 @@
 #include <string.h>
 //#include <stdio.h>
 
-#include "controller.h"
+#include "device/controller.h"
 //#include "btcore/include/counter.h"
-#include "bt_target.h"
+#include "common/bt_target.h"
 #include "btm_int.h"
-#include "btu.h"
-#include "hcimsgs.h"
-#include "l2c_api.h"
+#include "stack/btu.h"
+#include "stack/hcimsgs.h"
+#include "stack/l2c_api.h"
 #include "l2c_int.h"
-#include "l2cdefs.h"
+#include "stack/l2cdefs.h"
 //#include "osi/include/log.h"
 
 /********************************************************************************/
@@ -48,6 +48,8 @@ static void process_l2cap_cmd (tL2C_LCB *p_lcb, UINT8 *p, UINT16 pkt_len);
 /********************************************************************************/
 #if L2C_DYNAMIC_MEMORY == FALSE
 tL2C_CB l2cb;
+#else
+tL2C_CB *l2c_cb_ptr;
 #endif
 
 /*******************************************************************************
@@ -121,7 +123,10 @@ void l2c_rcv_acl_data (BT_HDR *p_msg)
     UINT8       pkt_type;
     tL2C_LCB    *p_lcb;
     tL2C_CCB    *p_ccb = NULL;
-    UINT16      l2cap_len, rcv_cid, psm;
+    UINT16      l2cap_len, rcv_cid;
+#if (!CONFIG_BT_STACK_NO_LOG)
+    UINT16      psm;
+#endif
     UINT16      credit;
 
     /* Extract the handle */
@@ -226,7 +231,9 @@ void l2c_rcv_acl_data (BT_HDR *p_msg)
         //counter_add("l2cap.ch2.rx.bytes", l2cap_len);
         //counter_add("l2cap.ch2.rx.pkts", 1);
         /* process_connectionless_data (p_lcb); */
+#if !CONFIG_BT_STACK_NO_LOG
         STREAM_TO_UINT16 (psm, p);
+#endif
         L2CAP_TRACE_DEBUG( "GOT CONNECTIONLESS DATA PSM:%d", psm ) ;
 
 #if (L2CAP_UCD_INCLUDED == TRUE)
@@ -235,7 +242,9 @@ void l2c_rcv_acl_data (BT_HDR *p_msg)
             /* nothing to do */
         } else
 #endif
+        {
             osi_free (p_msg);
+        }
     }
 #if (BLE_INCLUDED == TRUE)
     else if (rcv_cid == L2CAP_BLE_SIGNALLING_CID) {
@@ -261,9 +270,10 @@ void l2c_rcv_acl_data (BT_HDR *p_msg)
 #if (CLASSIC_BT_INCLUDED == TRUE)
                 l2c_fcr_proc_pdu (p_ccb, p_msg);
 #endif  ///CLASSIC_BT_INCLUDED == TRUE
-            } else
+            } else {
                 (*l2cb.fixed_reg[rcv_cid - L2CAP_FIRST_FIXED_CHNL].pL2CA_FixedData_Cb)
                 (rcv_cid, p_lcb->remote_bd_addr, p_msg);
+            }
         } else {
             osi_free (p_msg);
         }
@@ -393,7 +403,6 @@ static void process_l2cap_cmd (tL2C_LCB *p_lcb, UINT8 *p, UINT16 pkt_len)
                 STREAM_TO_UINT16 (rej_mtu, p);
                 /* What to do with the MTU reject ? We have negotiated an MTU. For now */
                 /* we will ignore it and let a higher protocol timeout take care of it */
-
                 L2CAP_TRACE_WARNING ("L2CAP - MTU rej Handle: %d MTU: %d", p_lcb->handle, rej_mtu);
             }
             if (rej_reason == L2CAP_CMD_REJ_INVALID_CID) {
@@ -756,6 +765,7 @@ static void process_l2cap_cmd (tL2C_LCB *p_lcb, UINT8 *p, UINT16 pkt_len)
         }
     }
 
+    UNUSED(rej_mtu);
 }
 #endif  ///CLASSIC_BT_INCLUDED == TRUE
 
@@ -815,7 +825,9 @@ void l2c_process_held_packets(BOOLEAN timed_out)
 void l2c_init (void)
 {
     INT16  xx;
-
+#if L2C_DYNAMIC_MEMORY
+    l2c_cb_ptr = (tL2C_CB *)osi_malloc(sizeof(tL2C_CB));
+#endif /* #if L2C_DYNAMIC_MEMORY */
     memset (&l2cb, 0, sizeof (tL2C_CB));
     /* the psm is increased by 2 before being used */
     l2cb.dyn_psm = 0xFFF;
@@ -866,7 +878,7 @@ void l2c_init (void)
 
     l2cb.rcv_pending_q = list_new(NULL);
     if (l2cb.rcv_pending_q == NULL) {
-        LOG_ERROR("%s unable to allocate memory for link layer control block", __func__);
+        L2CAP_TRACE_ERROR("%s unable to allocate memory for link layer control block", __func__);
     }
 }
 
@@ -874,6 +886,9 @@ void l2c_free(void)
 {
     list_free(l2cb.rcv_pending_q);
     l2cb.rcv_pending_q = NULL;
+#if L2C_DYNAMIC_MEMORY
+    FREE_AND_RESET(l2c_cb_ptr);
+#endif
 }
 
 /*******************************************************************************
@@ -959,7 +974,7 @@ UINT8 l2c_data_write (UINT16 cid, BT_HDR *p_data, UINT16 flags)
 
     /* If already congested, do not accept any more packets */
     if (p_ccb->cong_sent) {
-        L2CAP_TRACE_ERROR ("L2CAP - CID: 0x%04x cannot send, already congested  xmit_hold_q.count: %u  buff_quota: %u",
+        L2CAP_TRACE_DEBUG ("L2CAP - CID: 0x%04x cannot send, already congested  xmit_hold_q.count: %u  buff_quota: %u",
                            p_ccb->local_cid,
                            fixed_queue_length(p_ccb->xmit_hold_q),
                            p_ccb->buff_quota);

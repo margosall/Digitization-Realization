@@ -16,17 +16,16 @@
  *
  ******************************************************************************/
 #include <string.h>
-#include "bt_trace.h"
-#include "bt_defs.h"
-#include "controller.h"
-#include "buffer_allocator.h"
-#include "hci_internals.h"
-#include "hci_layer.h"
-#include "packet_fragmenter.h"
+#include "common/bt_trace.h"
+#include "common/bt_defs.h"
+#include "device/controller.h"
+#include "hci/hci_internals.h"
+#include "hci/hci_layer.h"
+#include "hci/packet_fragmenter.h"
 
-#include "hash_map.h"
-#include "hash_functions.h"
-#include "bt_trace.h"
+#include "osi/hash_map.h"
+#include "osi/hash_functions.h"
+#include "common/bt_trace.h"
 
 
 #define APPLY_CONTINUATION_FLAG(handle) (((handle) & 0xCFFF) | 0x1000)
@@ -44,7 +43,6 @@
 
 // Our interface and callbacks
 static const packet_fragmenter_t interface;
-static const allocator_t *buffer_allocator;
 static const controller_t *controller;
 static const packet_fragmenter_callbacks_t *callbacks;
 static hash_map_t *partial_packets;
@@ -130,7 +128,7 @@ static void fragment_and_dispatch(BT_HDR *packet)
 
 static void reassemble_and_dispatch(BT_HDR *packet)
 {
-    LOG_DEBUG("reassemble_and_dispatch\n");
+    HCI_TRACE_DEBUG("reassemble_and_dispatch\n");
 
     if ((packet->event & MSG_EVT_MASK) == MSG_HC_TO_STACK_HCI_ACL) {
         uint8_t *stream = packet->data + packet->offset;
@@ -151,22 +149,21 @@ static void reassemble_and_dispatch(BT_HDR *packet)
 
         if (boundary_flag == START_PACKET_BOUNDARY) {
             if (partial_packet) {
-                LOG_WARN("%s found unfinished packet for handle with start packet. Dropping old.\n", __func__);
+                HCI_TRACE_WARNING("%s found unfinished packet for handle with start packet. Dropping old.\n", __func__);
                 hash_map_erase(partial_packets, (void *)(uintptr_t)handle);
-                buffer_allocator->free(partial_packet);
+                osi_free(partial_packet);
             }
 
             uint16_t full_length = l2cap_length + L2CAP_HEADER_SIZE + HCI_ACL_PREAMBLE_SIZE;
             if (full_length <= packet->len) {
                 if (full_length < packet->len) {
-                    LOG_WARN("%s found l2cap full length %d less than the hci length %d.\n", __func__, l2cap_length, packet->len);
+                    HCI_TRACE_WARNING("%s found l2cap full length %d less than the hci length %d.\n", __func__, l2cap_length, packet->len);
                 }
 
                 callbacks->reassembled(packet);
                 return;
             }
-
-            partial_packet = (BT_HDR *)buffer_allocator->alloc(full_length + sizeof(BT_HDR));
+            partial_packet = (BT_HDR *)osi_calloc(full_length + sizeof(BT_HDR));
             partial_packet->event = packet->event;
             partial_packet->len = full_length;
             partial_packet->offset = packet->len;
@@ -180,11 +177,11 @@ static void reassemble_and_dispatch(BT_HDR *packet)
 
             hash_map_set(partial_packets, (void *)(uintptr_t)handle, partial_packet);
             // Free the old packet buffer, since we don't need it anymore
-            buffer_allocator->free(packet);
+            osi_free(packet);
         } else {
             if (!partial_packet) {
-                LOG_ERROR("%s got continuation for unknown packet. Dropping it.\n", __func__);
-                buffer_allocator->free(packet);
+                HCI_TRACE_ERROR("%s got continuation for unknown packet. Dropping it.\n", __func__);
+                osi_free(packet);
                 return;
             }
 
@@ -192,7 +189,7 @@ static void reassemble_and_dispatch(BT_HDR *packet)
             packet->len -= HCI_ACL_PREAMBLE_SIZE;
             uint16_t projected_offset = partial_packet->offset + packet->len;
             if (projected_offset > partial_packet->len) { // len stores the expected length
-                LOG_ERROR("%s got packet which would exceed expected length of %d. Truncating.\n", __func__, partial_packet->len);
+                HCI_TRACE_ERROR("%s got packet which would exceed expected length of %d. Truncating.\n", __func__, partial_packet->len);
                 packet->len = partial_packet->len - partial_packet->offset;
                 projected_offset = partial_packet->len;
             }
@@ -204,7 +201,7 @@ static void reassemble_and_dispatch(BT_HDR *packet)
             );
 
             // Free the old packet buffer, since we don't need it anymore
-            buffer_allocator->free(packet);
+            osi_free(packet);
             partial_packet->offset = projected_offset;
 
             if (partial_packet->offset == partial_packet->len) {
@@ -230,7 +227,6 @@ static const packet_fragmenter_t interface = {
 const packet_fragmenter_t *packet_fragmenter_get_interface()
 {
     controller = controller_get_interface();
-    buffer_allocator = buffer_allocator_get_interface();
     return &interface;
 }
 

@@ -23,24 +23,24 @@
  *
  ******************************************************************************/
 
-#include "bt_target.h"
+#include "common/bt_target.h"
 #if defined(BTA_AV_INCLUDED) && (BTA_AV_INCLUDED == TRUE)
 
 #include <string.h>
-#include "bta_av_api.h"
+#include "bta/bta_av_api.h"
 #include "bta_av_int.h"
-#include "avdt_api.h"
-#include "utl.h"
-#include "l2c_api.h"
-#include "allocator.h"
-#include "list.h"
+#include "stack/avdt_api.h"
+#include "bta/utl.h"
+#include "stack/l2c_api.h"
+#include "osi/allocator.h"
+#include "osi/list.h"
 #if( defined BTA_AR_INCLUDED ) && (BTA_AR_INCLUDED == TRUE)
-#include "bta_ar_api.h"
+#include "bta/bta_ar_api.h"
 #endif
 
 #define LOG_TAG "bt_bta_av"
 // #include "osi/include/log.h"
-#include "bt_trace.h"
+#include "common/bt_trace.h"
 
 /*****************************************************************************
 **  Constants
@@ -474,7 +474,7 @@ void bta_av_rc_opened(tBTA_AV_CB *p_cb, tBTA_AV_DATA *p_data)
             p_scb->rc_handle = p_data->rc_conn_chg.handle;
             APPL_TRACE_DEBUG("bta_av_rc_opened shdl:%d, srch %d", i + 1, p_scb->rc_handle);
             shdl = i + 1;
-            LOG_INFO("%s allow incoming AVRCP connections:%d", __func__, p_scb->use_rc);
+            APPL_TRACE_EVENT("%s allow incoming AVRCP connections:%d", __func__, p_scb->use_rc);
             bta_sys_stop_timer(&p_scb->timer);
             disc = p_scb->hndl;
             break;
@@ -506,7 +506,7 @@ void bta_av_rc_opened(tBTA_AV_CB *p_cb, tBTA_AV_DATA *p_data)
 
     p_cb->rcb[i].shdl = shdl;
     rc_open.rc_handle = i;
-    APPL_TRACE_ERROR("bta_av_rc_opened rcb[%d] shdl:%d lidx:%d/%d",
+    APPL_TRACE_EVENT("bta_av_rc_opened rcb[%d] shdl:%d lidx:%d/%d",
                      i, shdl, p_cb->rcb[i].lidx, p_cb->lcb[BTA_AV_NUM_LINKS].lidx);
     p_cb->rcb[i].status |= BTA_AV_RC_CONN_MASK;
 
@@ -829,10 +829,11 @@ void bta_av_rc_msg(tBTA_AV_CB *p_cb, tBTA_AV_DATA *p_data)
             if (p_data->rc_msg.msg.pass.op_id == AVRC_ID_VENDOR) {
                 p_data->rc_msg.msg.hdr.ctype = BTA_AV_RSP_NOT_IMPL;
 #if (AVRC_METADATA_INCLUDED == TRUE)
-                if (p_cb->features & BTA_AV_FEAT_METADATA)
+                if (p_cb->features & BTA_AV_FEAT_METADATA) {
                     p_data->rc_msg.msg.hdr.ctype =
                         bta_av_group_navi_supported(p_data->rc_msg.msg.pass.pass_len,
                                                     p_data->rc_msg.msg.pass.p_pass_data, is_inquiry);
+                }
 #endif
             } else {
                 p_data->rc_msg.msg.hdr.ctype = bta_av_op_supported(p_data->rc_msg.msg.pass.op_id, is_inquiry);
@@ -890,7 +891,9 @@ void bta_av_rc_msg(tBTA_AV_CB *p_cb, tBTA_AV_DATA *p_data)
                 evt = bta_av_proc_meta_cmd (&rc_rsp, &p_data->rc_msg, &ctype);
             } else
 #endif
+            {
                 evt = BTA_AV_VENDOR_CMD_EVT;
+            }
         }
         /* else if configured to support vendor specific and it's a response */
         else if ((p_cb->features & BTA_AV_FEAT_VENDOR) &&
@@ -902,7 +905,9 @@ void bta_av_rc_msg(tBTA_AV_CB *p_cb, tBTA_AV_DATA *p_data)
                 evt = BTA_AV_META_MSG_EVT;
             } else
 #endif
+            {
                 evt = BTA_AV_VENDOR_RSP_EVT;
+            }
 
         }
         /* else if not configured to support vendor specific and it's a command */
@@ -1063,7 +1068,7 @@ void bta_av_stream_chg(tBTA_AV_SCB *p_scb, BOOLEAN started)
 **
 ** Function         bta_av_conn_chg
 **
-** Description      connetion status changed.
+** Description      connection status changed.
 **                  Open an AVRCP acceptor channel, if new conn.
 **
 ** Returns          void
@@ -1870,8 +1875,14 @@ void bta_av_dereg_comp(tBTA_AV_DATA *p_data)
             bta_av_cb.features  = 0;
         }
 
-        /* Clear the Capturing service class bit */
-        cod.service = BTM_COD_SERVICE_CAPTURING;
+        /* Clear the Capturing/Rendering service class bit */
+        if (p_data->api_reg.tsep == AVDT_TSEP_SRC) {
+            cod.service = BTM_COD_SERVICE_CAPTURING | BTM_COD_SERVICE_AUDIO;
+        } else {
+#if (BTA_AV_SINK_INCLUDED == TRUE)
+            cod.service = BTM_COD_SERVICE_RENDERING | BTM_COD_SERVICE_AUDIO;
+#endif
+        }
         utl_set_device_class(&cod, BTA_UTL_CLR_COD_SERVICE_CLASS);
     }
 }

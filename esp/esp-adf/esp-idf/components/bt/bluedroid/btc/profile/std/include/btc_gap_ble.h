@@ -30,7 +30,9 @@ typedef enum {
     BTC_GAP_BLE_ACT_UPDATE_CONN_PARAM,
     BTC_GAP_BLE_ACT_SET_PKT_DATA_LEN,
     BTC_GAP_BLE_ACT_SET_RAND_ADDRESS,
+    BTC_GAP_BLE_ACT_CLEAR_RAND_ADDRESS,
     BTC_GAP_BLE_ACT_CONFIG_LOCAL_PRIVACY,
+    BTC_GAP_BLE_ACT_CONFIG_LOCAL_ICON,
     BTC_GAP_BLE_ACT_UPDATE_WHITE_LIST,
     BTC_GAP_BLE_ACT_SET_CONN_PARAMS,
     BTC_GAP_BLE_ACT_SET_DEV_NAME,
@@ -44,6 +46,7 @@ typedef enum {
     BTC_GAP_BLE_CONFIRM_REPLY_EVT,
     BTC_GAP_BLE_DISCONNECT_EVT,
     BTC_GAP_BLE_REMOVE_BOND_DEV_EVT,
+    BTC_GAP_BLE_UPDATE_DUPLICATE_SCAN_EXCEPTIONAL_LIST,
 } btc_gap_ble_act_t;
 
 /* btc_ble_gap_args_t */
@@ -83,11 +86,21 @@ typedef union {
     struct cfg_local_privacy_args {
         bool privacy_enable;
     } cfg_local_privacy;
+    //BTC_GAP_BLE_ACT_CONFIG_LOCAL_ICON,
+    struct cfg_local_icon_args {
+        uint16_t icon;
+    } cfg_local_icon;
     //BTC_GAP_BLE_ACT_UPDATE_WHITE_LIST
     struct update_white_list_args {
         bool add_remove;
         esp_bd_addr_t remote_bda;
     }update_white_list;
+    //BTC_GAP_BLE_UPDATE_DUPLICATE_SCAN_EXCEPTIONAL_LIST
+    struct update_duplicate_exceptional_list_args {
+        uint8_t  subcode;
+        uint32_t  info_type;
+        esp_duplicate_info_t device_info;
+    }update_duplicate_exceptional_list;
     //BTC_GAP_BLE_ACT_SET_CONN_PARAMS
     struct set_conn_params_args {
         esp_bd_addr_t bd_addr;
@@ -160,5 +173,8 @@ void btc_gap_ble_arg_deep_free(btc_msg_t *msg);
 void btc_gap_ble_cb_deep_free(btc_msg_t *msg);
 void btc_gap_ble_cb_deep_copy(btc_msg_t *msg, void *p_dest, void *p_src);
 void btc_gap_callback_init(void);
+void btc_gap_ble_deinit(void);
+void btc_adv_list_init(void);
+void btc_adv_list_deinit(void);
 
 #endif /* __BTC_GAP_BLE_H__ */

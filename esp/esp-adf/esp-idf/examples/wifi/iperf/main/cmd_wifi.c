@@ -37,14 +37,42 @@ typedef struct {
     struct arg_str *password;
     struct arg_end *end;
 } wifi_args_t;
+
+typedef struct {
+    struct arg_str *ssid;
+    struct arg_end *end;
+} wifi_scan_arg_t;
+
 static wifi_args_t sta_args;
+static wifi_scan_arg_t scan_args;
 static wifi_args_t ap_args;
 static bool reconnect = true;
-static const char *TAG="iperf";
+static const char *TAG="cmd_wifi";
 
 static EventGroupHandle_t wifi_event_group;
 const int CONNECTED_BIT = BIT0;
 const int DISCONNECTED_BIT = BIT1;
+
+static void scan_done_handler(void)
+{
+    uint16_t sta_number = 0;
+    uint8_t i;
+    wifi_ap_record_t *ap_list_buffer;
+
+    esp_wifi_scan_get_ap_num(&sta_number);
+    ap_list_buffer = malloc(sta_number * sizeof(wifi_ap_record_t));
+    if (ap_list_buffer == NULL) {
+        ESP_LOGE(TAG, "Failed to malloc buffer to print scan results");
+        return;
+    }
+
+    if (esp_wifi_scan_get_ap_records(&sta_number,(wifi_ap_record_t *)ap_list_buffer) == ESP_OK) {
+        for(i=0; i<sta_number; i++) {
+            ESP_LOGI(TAG, "[%s][rssi=%d]", ap_list_buffer[i].ssid, ap_list_buffer[i].rssi);
+        }
+    }
+    free(ap_list_buffer);
+}
 
 static esp_err_t event_handler(void *ctx, system_event_t *event)
 {
@@ -52,6 +80,10 @@ static esp_err_t event_handler(void *ctx, system_event_t *event)
     case SYSTEM_EVENT_STA_GOT_IP:
         xEventGroupClearBits(wifi_event_group, DISCONNECTED_BIT);
         xEventGroupSetBits(wifi_event_group, CONNECTED_BIT);
+        break;
+    case SYSTEM_EVENT_SCAN_DONE:
+        scan_done_handler();
+        ESP_LOGI(TAG, "sta scan done");
         break;
     case SYSTEM_EVENT_STA_DISCONNECTED:
         if (reconnect) {
@@ -113,7 +145,7 @@ static bool wifi_cmd_sta_join(const char* ssid, const char* pass)
     ESP_ERROR_CHECK( esp_wifi_connect() );
 
     xEventGroupWaitBits(wifi_event_group, CONNECTED_BIT, 0, 1, 5000/portTICK_RATE_MS);
-    
+
     return true;
 }
 
@@ -131,6 +163,35 @@ static int wifi_cmd_sta(int argc, char** argv)
     return 0;
 }
 
+static bool wifi_cmd_sta_scan(const char* ssid)
+{
+    wifi_scan_config_t scan_config = { 0 };
+    scan_config.ssid = (uint8_t *) ssid;
+
+    ESP_ERROR_CHECK( esp_wifi_set_mode(WIFI_MODE_STA) );
+    ESP_ERROR_CHECK( esp_wifi_scan_start(&scan_config, false) );
+
+    return true;
+}
+
+static int wifi_cmd_scan(int argc, char** argv)
+{
+    int nerrors = arg_parse(argc, argv, (void**) &scan_args);
+
+    if (nerrors != 0) {
+        arg_print_errors(stderr, scan_args.end, argv[0]);
+        return 1;
+    }
+
+    ESP_LOGI(TAG, "sta start to scan");
+    if ( scan_args.ssid->count == 1 ) {
+        wifi_cmd_sta_scan(scan_args.ssid->sval[0]);
+    } else {
+        wifi_cmd_sta_scan(NULL);
+    }
+    return 0;
+}
+
 
 static bool wifi_cmd_ap_set(const char* ssid, const char* pass)
 {
@@ -144,7 +205,7 @@ static bool wifi_cmd_ap_set(const char* ssid, const char* pass)
         },
     };
 
-    reconnect = false; 
+    reconnect = false;
     strncpy((char*) wifi_config.ap.ssid, ssid, sizeof(wifi_config.ap.ssid));
     if (pass) {
         if (strlen(pass) != 0 && strlen(pass) < 8) {
@@ -305,16 +366,10 @@ static int wifi_cmd_iperf(int argc, char** argv)
             cfg.interval, cfg.time);
 
     iperf_start(&cfg);
-    
+
     return 0;
 }
 
-static int restart(int argc, char** argv)
-{
-    ESP_LOGI(TAG, "Restarting");
-    esp_restart();
-}
- 
 void register_wifi()
 {
     sta_args.ssid = arg_str1(NULL, NULL, "<ssid>", "SSID of AP");
@@ -331,9 +386,23 @@ void register_wifi()
 
     ESP_ERROR_CHECK( esp_console_cmd_register(&sta_cmd) );
 
+    scan_args.ssid = arg_str0(NULL, NULL, "<ssid>", "SSID of AP want to be scanned");
+    scan_args.end = arg_end(1);
+
+    const esp_console_cmd_t scan_cmd = {
+        .command = "scan",
+        .help = "WiFi is station mode, start scan ap",
+        .hint = NULL,
+        .func = &wifi_cmd_scan,
+        .argtable = &scan_args
+    };
+
     ap_args.ssid = arg_str1(NULL, NULL, "<ssid>", "SSID of AP");
     ap_args.password = arg_str0(NULL, NULL, "<pass>", "password of AP");
     ap_args.end = arg_end(2);
+
+
+    ESP_ERROR_CHECK( esp_console_cmd_register(&scan_cmd) );
 
     const esp_console_cmd_t ap_cmd = {
         .command = "ap",
@@ -352,14 +421,6 @@ void register_wifi()
         .func = &wifi_cmd_query,
     };
     ESP_ERROR_CHECK( esp_console_cmd_register(&query_cmd) );
-
-    const esp_console_cmd_t restart_cmd = {
-        .command = "restart",
-        .help = "Restart the program",
-        .hint = NULL,
-        .func = &restart,
-    };
-    ESP_ERROR_CHECK( esp_console_cmd_register(&restart_cmd) );
 
     iperf_args.ip = arg_str0("c", "client", "<ip>", "run in client mode, connecting to <host>");
     iperf_args.server = arg_lit0("s", "server", "run in server mode");

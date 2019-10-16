@@ -1,7 +1,8 @@
-Audio Development Framework
-===========================
+Espressif Audio Development Guide
+=================================
+:link_to_translation:`zh_CN:[中文]`
 
-This is the documentation for Espressif Audio Development Framework.
+This is the documentation for Espressif Audio Development Framework (ADF).
 
 
 +------------------+------------------+------------------+
@@ -11,13 +12,13 @@ This is the documentation for Espressif Audio Development Framework.
 +------------------+------------------+------------------+
 
 
-.. |Get Started| image:: ../_static/get-started.gif
+.. |Get Started| image:: ../_static/get-started.png
 .. _Get Started: get-started/index.html
 
-.. |API Reference| image:: ../_static/api-reference.gif
+.. |API Reference| image:: ../_static/api-reference.png
 .. _API Reference: api-reference/index.html
 
-.. |Design Guide| image:: ../_static/design-guide.gif
+.. |Design Guide| image:: ../_static/design-guide.png
 .. _Design Guide: design-guide/index.html
 
 

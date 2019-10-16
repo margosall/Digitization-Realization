@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 script_path =  os.path.dirname(os.path.realpath(__file__))
 
-ser = serial.Serial('/dev/ttyUSB0', 921600)
+ser = serial.Serial('/dev/ttyUSB1', 4000000)
 
 counter = 1
 

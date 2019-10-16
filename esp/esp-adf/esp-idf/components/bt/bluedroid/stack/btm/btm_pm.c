@@ -35,13 +35,13 @@
 //#include <stdio.h>
 #include <stddef.h>
 
-#include "bt_types.h"
-#include "hcimsgs.h"
-#include "btu.h"
-#include "btm_api.h"
+#include "stack/bt_types.h"
+#include "stack/hcimsgs.h"
+#include "stack/btu.h"
+#include "stack/btm_api.h"
 #include "btm_int.h"
 #include "l2c_int.h"
-#include "hcidefs.h"
+#include "stack/hcidefs.h"
 //#include "bt_utils.h"
 //#include "osi/include/log.h"
 
@@ -78,7 +78,9 @@ const UINT8 btm_pm_md_comp_matrix[BTM_PM_NUM_SET_MODES * BTM_PM_NUM_SET_MODES] =
 /* function prototype */
 static int btm_pm_find_acl_ind(BD_ADDR remote_bda);
 static tBTM_STATUS btm_pm_snd_md_req( UINT8 pm_id, int link_ind, tBTM_PM_PWR_MD *p_mode );
+#if (!CONFIG_BT_STACK_NO_LOG)
 static const char *mode_to_string(tBTM_PM_MODE mode);
+#endif
 
 /*
 #ifdef BTM_PM_DEBUG
@@ -606,7 +608,7 @@ static tBTM_STATUS btm_pm_snd_md_req(UINT8 pm_id, int link_ind, tBTM_PM_PWR_MD *
     BTM_TRACE_DEBUG("btm_pm_snd_md_req state:0x%x, link_ind: %d", p_cb->state, link_ind);
 #endif  // BTM_PM_DEBUG
 
-    LOG_DEBUG("%s switching from %s to %s.", __func__, mode_to_string(p_cb->state), mode_to_string(md_res.mode));
+    BTM_TRACE_DEBUG("%s switching from %s to %s.", __func__, mode_to_string(p_cb->state), mode_to_string(md_res.mode));
     switch (md_res.mode) {
     case BTM_PM_MD_ACTIVE:
         switch (p_cb->state) {
@@ -772,7 +774,7 @@ void btm_pm_proc_mode_change (UINT8 hci_status, UINT16 hci_handle, UINT8 mode, U
     p_cb->state     = mode;
     p_cb->interval  = interval;
 
-    LOG_DEBUG("%s switched from %s to %s.", __func__, mode_to_string(old_state), mode_to_string(p_cb->state));
+    BTM_TRACE_DEBUG("%s switched from %s to %s.", __func__, mode_to_string(old_state), mode_to_string(p_cb->state));
 
     if ((p_lcb = l2cu_find_lcb_by_bd_addr(p->remote_addr, BT_TRANSPORT_BR_EDR)) != NULL) {
         if ((p_cb->state == BTM_PM_ST_ACTIVE) || (p_cb->state == BTM_PM_ST_SNIFF)) {
@@ -950,6 +952,7 @@ tBTM_CONTRL_STATE BTM_PM_ReadControllerState(void)
     }
 }
 
+#if (!CONFIG_BT_STACK_NO_LOG)
 static const char *mode_to_string(tBTM_PM_MODE mode)
 {
     switch (mode) {
@@ -960,3 +963,4 @@ static const char *mode_to_string(tBTM_PM_MODE mode)
     default:               return "UNKNOWN";
     }
 }
+#endif

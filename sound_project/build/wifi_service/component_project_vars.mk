@@ -1,6 +1,6 @@
 # Automatically generated build file. Do not edit.
-COMPONENT_INCLUDES += /home/kits/Desktop/esp/esp-adf/components/wifi_service/include
-COMPONENT_LDFLAGS += -L$(BUILD_DIR_BASE)/wifi_service -lwifi_service -lmain -L /home/kits/Desktop/esp/esp-adf/components/wifi_service/airkiss_config -lairkiss_aes
+COMPONENT_INCLUDES += /home/kits/Desktop/Kool/sem_5/IAS1420/Digitization-Realization/esp/esp-adf/components/wifi_service/include
+COMPONENT_LDFLAGS += -L$(BUILD_DIR_BASE)/wifi_service -lwifi_service -lmain -L /home/kits/Desktop/Kool/sem_5/IAS1420/Digitization-Realization/esp/esp-adf/components/wifi_service/airkiss_config -lairkiss_aes
 COMPONENT_LINKER_DEPS += 
 COMPONENT_SUBMODULES += 
 COMPONENT_LIBRARIES += wifi_service

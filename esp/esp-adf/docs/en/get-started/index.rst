@@ -4,23 +4,33 @@ Get Started
 
 This document is intended to help users set up the software environment for the development of audio applications using hardware based on the ESP32 by Espressif. Through a simple example, we would like to illustrate how to use ESP-ADF (Espressif Audio Development Framework).
 
-To make the start with ESP-ADF quicker, Espressif designed :doc:`ESP32 LyraT <get-started-esp32-lyrat>`, a development board intended to build an audio application with the ESP32.
+To make the start with ESP-ADF quicker, Espressif designed development boards intended to build audio applications with the ESP32. Click the links below to get started.
 
-.. figure:: ../../_static/esp32-lyrat-v4.2-side.jpg
-    :alt: ESP32 LyraT audio development board
-    :figclass: align-center
-    :width: 60%
+==========================================  ==========================================  ==========================================
+|Getting Started with ESP32-LyraT|_         |Getting Started with ESP32-LyraTD-MSC|_    |Getting Started with ESP32-LyraT-Mini|_
+==========================================  ==========================================  ==========================================
+`Getting Started with ESP32-LyraT`_         `Getting Started with ESP32-LyraTD-MSC`_    `Getting Started with ESP32-LyraT-Mini`_
+==========================================  ==========================================  ==========================================
 
-    ESP32 LyraT audio development board
+.. |Getting Started with ESP32-LyraT| image:: ../../_static/esp32-lyrat-v4.2-side.jpg
+.. _Getting Started with ESP32-LyraT: get-started-esp32-lyrat.html
 
-Click the link below to get started with this board.
+.. |Getting Started with ESP32-LyraTD-MSC| image:: ../../_static/esp32-lyratd-msc-v2.2.jpg
+.. _Getting Started with ESP32-LyraTD-MSC: get-started-esp32-lyratd-msc.html
+
+.. |Getting Started with ESP32-LyraT-Mini| image:: ../../_static/esp32-lyrat-mini-v1.2.png
+.. _Getting Started with ESP32-LyraT-Mini: get-started-esp32-lyrat-mini.html
 
 .. toctree::
+    :hidden:
     :maxdepth: 1
 
-    Get Started with ESP32 LyraT <get-started-esp32-lyrat>
+    Guide for ESP32-LyraT <get-started-esp32-lyrat>
+    Guide for ESP32-LyraTD-MSC <get-started-esp32-lyratd-msc>
+    Guide for ESP32-LyraT-Mini <get-started-esp32-lyrat-mini>
 
-If you do not have the :doc:`ESP32 LyraT <get-started-esp32-lyrat>` board, you can still use ESP-ADF for the ESP32 based audio applications. This is providing your board has a compatible audio codec chip, or you develop a driver to support communication with your specific audio codec chip.
+
+If you do not have one of the above boards, you can still use ESP-ADF for the ESP32 based audio applications. This is providing your board has a compatible audio codec or DSP chip, or you develop a driver to support communication with your specific chip.
 
 
 About ESP-ADF
@@ -30,15 +40,18 @@ The ESP-ADF is available as a set of :adf:`components` to extend the functionali
 
 To use ESP-ADF you need set up the ESP-IDF first, and this is described in the next section.
 
+.. note::
+
+    ESP-ADF is developed using `stable version of ESP-IDF <https://docs.espressif.com/projects/esp-idf/en/stable/versions.html>`_. If your have already set up another version, please switch to the stable, or you may not be able to compile ESP-ADF applications.
 
 .. _get-started-setup-esp-idf:
 
-Setup ESP-IDF
-=============
+Set up ESP-IDF
+==============
 
-Configure your PC according to `ESP32 Documentation <http://esp-idf.readthedocs.io/en/latest/?badge=latest>`_. `Windows <http://esp-idf.readthedocs.io/en/latest/get-started/windows-setup.html>`_, `Linux <http://esp-idf.readthedocs.io/en/latest/get-started/linux-setup.html>`_ and `Mac OS <http://esp-idf.readthedocs.io/en/latest/get-started/macos-setup.html>`_ operating systems are supported.
+Configure your PC according to `ESP32 Documentation <https://docs.espressif.com/projects/esp-idf/en/stable/>`_. `Windows <https://docs.espressif.com/projects/esp-idf/en/stable/get-started/windows-setup.html>`_, `Linux <https://docs.espressif.com/projects/esp-idf/en/stable/get-started/linux-setup.html>`_ and `Mac OS <https://docs.espressif.com/projects/esp-idf/en/stable/get-started/macos-setup.html>`_ operating systems are supported.
 
-You have a choice to compile and upload code to the ESP32 by command line with `make <http://esp-idf.readthedocs.io/en/latest/get-started/make-project.html>`_ or using `Eclipse IDE <http://esp-idf.readthedocs.io/en/latest/get-started/eclipse-setup.html>`_.
+You have a choice to compile and upload code to the ESP32 by command line with `make <https://docs.espressif.com/projects/esp-idf/en/stable/get-started/make-project.html>`_ or using `Eclipse IDE <https://docs.espressif.com/projects/esp-idf/en/stable/get-started/eclipse-setup.html>`_.
 
 .. note::
 
@@ -46,7 +59,7 @@ You have a choice to compile and upload code to the ESP32 by command line with `
 
 To make the installation easier and less prone to errors, use the ``~/esp`` default directory for the installation. Once you get through ESP-IDF setup and move to the ESP-ADF, you will notice that installation of the ESP-ADF follows the similar process. This should make it even easier to get up and running with the ESP-ADF.
 
-If this is your first exposure to the ESP32 and `ESP-IDF <https://github.com/espressif/esp-idf>`_, then it is recommended to get familiar with `hello_world <https://github.com/espressif/esp-idf/tree/master/examples/get-started/hello_world>`_ and `blink <https://github.com/espressif/esp-idf/tree/master/examples/get-started/blink>`_ examples first. Once you can build, upload and run these two examples, then you are ready to proceed to the next section.
+If this is your first exposure to the ESP32 and `ESP-IDF <https://github.com/espressif/esp-idf>`_, then it is recommended to get familiar with :adf:`hello_world <esp-idf/examples/get-started/hello_world>` and :adf:`blink <esp-idf/examples/get-started/blink>` examples first. Once you can build, upload and run these two examples, then you are ready to proceed to the next section.
 
 
 .. _get-started-get-esp-adf:
@@ -76,7 +89,7 @@ ESP-ADF will be downloaded into ``~/esp/esp-adf``.
 Setup Path to ESP-ADF
 =====================
 
-The toolchain programs access ESP-ADF using ``ADF_PATH`` environment variable. This variable should be set up on your PC, otherwise the projects will not build. The process to set it up is analogous to setting up the ``IDF_PATH`` variable, please see instructions in ESP-IDF documentation under `Add IDF_PATH to User Profile <https://esp-idf.readthedocs.io/en/latest/get-started/add-idf_path-to-profile.html>`_.
+The toolchain programs access ESP-ADF using ``ADF_PATH`` environment variable. This variable should be set up on your PC, otherwise the projects will not build. The process to set it up is analogous to setting up the ``IDF_PATH`` variable, please see instructions in ESP-IDF documentation under `Add IDF_PATH to User Profile <https://docs.espressif.com/projects/esp-idf/en/stable/get-started/add-idf_path-to-profile.html>`_.
 
 
 .. _get-started-start-project:
@@ -106,9 +119,9 @@ You can also find a range of example projects under the :adf:`examples` director
 Connect and Configure
 =====================
 
-Connect the audio ESP32 board to the PC, check under what serial port the board is visible and verify if serial communication works as described `ESP-IDF Documentation <https://esp-idf.readthedocs.io/en/latest/get-started/establish-serial-connection.html>`_.
+Connect the audio ESP32 board to the PC, check under what serial port the board is visible and verify, if serial communication works as described in `ESP-IDF Documentation <https://docs.espressif.com/projects/esp-idf/en/stable/get-started/establish-serial-connection.html>`_.
 
-At the terminal window, go to the directory of ``play_mp3`` application and configure it with ``menuconfig`` by selecting the serial port and upload speed::
+At the terminal window, go to the directory of ``play_mp3`` application and configure it with ``menuconfig`` by selecting the serial port, upload speed and the audio board version::
 
     cd ~/esp/play_mp3
     make menuconfig
@@ -125,11 +138,36 @@ Now you can build, upload and check the application. Run::
 
     make flash monitor -j5
 
-This will build the application including ESP-IDF / ESP-ADF components, upload binaries to your ESP32 board and start the monitor.
+This will build the application including ESP-IDF / ESP-ADF components, upload (flash) binaries to your ESP32 board and start the monitor.
+
+Upload
+------
 
 .. highlight:: none
 
-::
+To upload the binaries, the board should be put into upload mode. To do so, hold down **Boot** button, momentarily press **Reset** button and release the **Boot** button. The upload mode may be initiated anytime during the application build, but no later than "Connecting" message is being displayed::
+
+    ...
+
+    esptool.py v2.1
+    Connecting........_____....
+
+Without the upload mode enabled, after showing several ``....._____``, the connection will eventually time out.
+
+Once build and upload is complete, you should see the following::
+
+    ...
+
+    Leaving...
+    Hard resetting...
+    MONITOR
+    --- idf_monitor on /dev/ttyUSB0 115200 ---
+    --- Quit: Ctrl+] | Menu: Ctrl+T | Help: Ctrl+T followed by Ctrl+H ---
+
+Monitor
+-------
+
+At this point press the **Reset** button to start the application. Following several lines of start up log, the ``play_mp3`` application specific messages should be displayed::
 
     ...
 
@@ -149,7 +187,6 @@ This will build the application including ESP-IDF / ESP-ADF components, upload b
     I (7183) PLAY_MP3_FLASH: [ 5 ] Stop audio_pipeline
     W (7183) AUDIO_PIPELINE: There are no listener registered
 
-
 If there are no issues, besides the above log, you should hear a sound played for about 7 seconds by the speakers or headphones connected to your audio board. Reset the board to hear it again if required.
 
 Now you are ready to try some other :adf:`examples`, or go right to developing your own applications. Check how the :adf:`examples` are made aware of location of the ESP-ADF. Open the :example_file:`get-started/play_mp3/Makefile` and you should see ::
@@ -162,7 +199,7 @@ The second line contains ``$ADF_PATH`` to point the toolchain to the ESP-ADF. Yo
 
 
 Update ESP-ADF
-================
+==============
 
 After some time of using ESP-ADF, you may want to update it to take advantage of new features or bug fixes. The simplest way to do so is by deleting existing ``esp-adf`` folder and cloning it again, which is same as when doing initial installation described in sections :ref:`get-started-get-esp-adf`.
 

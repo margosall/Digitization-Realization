@@ -1,5 +1,5 @@
 # Automatically generated build file. Do not edit.
-COMPONENT_INCLUDES += /home/kits/Desktop/esp/esp-adf/components/audio_board/include /home/kits/Desktop/esp/esp-adf/components/audio_board/lyrat_v4_3
+COMPONENT_INCLUDES += /home/kits/Desktop/Kool/sem_5/IAS1420/Digitization-Realization/esp/esp-adf/components/audio_board/include /home/kits/Desktop/Kool/sem_5/IAS1420/Digitization-Realization/esp/esp-adf/components/audio_board/ai_audio_v1_0
 COMPONENT_LDFLAGS += -L$(BUILD_DIR_BASE)/audio_board -laudio_board
 COMPONENT_LINKER_DEPS += 
 COMPONENT_SUBMODULES += 

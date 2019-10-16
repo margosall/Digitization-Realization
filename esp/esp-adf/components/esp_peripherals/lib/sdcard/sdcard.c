@@ -38,10 +38,10 @@
 #include "sdcard.h"
 #include "board.h"
 
-static const char* TAG = "SDCARD";
+static const char *TAG = "SDCARD";
 int g_gpio = -1;
 
-static void sdmmc_card_print_info(const sdmmc_card_t* card)
+static void sdmmc_card_print_info(const sdmmc_card_t *card)
 {
     ESP_LOGD(TAG, "Name: %s\n", card->cid.name);
     ESP_LOGD(TAG, "Type: %s\n", (card->ocr & SD_OCR_SDHC_CAP) ? "SDHC/SDXC" : "SDSC");
@@ -53,20 +53,21 @@ static void sdmmc_card_print_info(const sdmmc_card_t* card)
     ESP_LOGD(TAG, "SCR: sd_spec=%d, bus_width=%d\n", card->scr.sd_spec, card->scr.bus_width);
 }
 
-esp_err_t sdcard_mount(const char* base_path)
+esp_err_t sdcard_mount(const char *base_path)
 {
     sdmmc_host_t host = SDMMC_HOST_DEFAULT();
     // To use 1-line SD mode, uncomment the following line:
     host.flags = SDMMC_HOST_FLAG_1BIT;
+    host.max_freq_khz = SDMMC_FREQ_HIGHSPEED;
     sdmmc_slot_config_t slot_config = SDMMC_SLOT_CONFIG_DEFAULT();
     slot_config.gpio_cd = g_gpio;
     slot_config.width = 1;
     esp_vfs_fat_sdmmc_mount_config_t mount_config = {
         .format_if_mount_failed = false,
-        .max_files = SD_CARD_OPEN_FILE_NUM_MAX
+        .max_files = get_sdcard_open_file_num_max()
     };
 
-    sdmmc_card_t* card;
+    sdmmc_card_t *card;
     ESP_LOGI(TAG, "Trying to mount with base path=%s", base_path);
     esp_err_t ret = esp_vfs_fat_sdmmc_mount(base_path, &host, &slot_config, &mount_config, &card);
 
@@ -108,6 +109,8 @@ bool sdcard_is_exist()
 {
     if (g_gpio >= 0) {
         return (gpio_get_level(g_gpio) == 0x00);
+    } else {
+        return true;
     }
     return false;
 }
@@ -116,6 +119,8 @@ int IRAM_ATTR sdcard_read_detect_pin(void)
 {
     if (g_gpio >= 0) {
         return gpio_get_level(g_gpio);
+    } else {
+        return -1;
     }
     return 0;
 }

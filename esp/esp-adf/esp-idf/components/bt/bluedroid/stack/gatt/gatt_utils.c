@@ -21,18 +21,18 @@
  *  this file contains GATT utility functions
  *
  ******************************************************************************/
-#include "bt_target.h"
-#include "allocator.h"
+#include "common/bt_target.h"
+#include "osi/allocator.h"
 
 #if BLE_INCLUDED == TRUE
 #include <string.h>
 #include <stdio.h>
 
-#include "l2cdefs.h"
+#include "stack/l2cdefs.h"
 #include "gatt_int.h"
-#include "gatt_api.h"
-#include "gattdefs.h"
-#include "sdp_api.h"
+#include "stack/gatt_api.h"
+#include "stack/gattdefs.h"
+#include "stack/sdp_api.h"
 #include "btm_int.h"
 /* check if [x, y] and [a, b] have overlapping range */
 #define GATT_VALIDATE_HANDLE_RANGE(x, y, a, b)   (y >= a && x <= b)
@@ -94,7 +94,7 @@ void gatt_free_pending_ind(tGATT_TCB *p_tcb)
     if (p_tcb->pending_ind_q == NULL) {
         return;
     }
-	
+
     /* release all queued indications */
     while (!fixed_queue_is_empty(p_tcb->pending_ind_q)) {
         osi_free(fixed_queue_try_dequeue(p_tcb->pending_ind_q));
@@ -118,7 +118,7 @@ void gatt_free_pending_enc_queue(tGATT_TCB *p_tcb)
     if (p_tcb->pending_enc_clcb == NULL) {
         return;
     }
-	
+
     /* release all queued indications */
     while (!fixed_queue_is_empty(p_tcb->pending_enc_clcb)) {
         osi_free(fixed_queue_try_dequeue(p_tcb->pending_enc_clcb));
@@ -337,7 +337,7 @@ tGATT_HDL_LIST_ELEM *gatt_alloc_hdl_buffer(void)
         if (!p_cb->hdl_list[i].in_use) {
             memset(p_elem, 0, sizeof(tGATT_HDL_LIST_ELEM));
             p_elem->in_use = TRUE;
-            p_elem->svc_db.svc_buffer = fixed_queue_new(SIZE_MAX);
+            p_elem->svc_db.svc_buffer = fixed_queue_new(QUEUE_SIZE_MAX);
             return p_elem;
         }
     }
@@ -387,7 +387,7 @@ tGATT_HDL_LIST_ELEM *gatt_find_hdl_buffer_by_attr_handle(UINT16 attr_handle)
     p_list = p_list_info->p_first;
 
     while (p_list != NULL) {
-        if (p_list->in_use && (p_list->asgn_range.s_handle <= attr_handle) 
+        if (p_list->in_use && (p_list->asgn_range.s_handle <= attr_handle)
 			&& (p_list->asgn_range.e_handle >= attr_handle)) {
             return (p_list);
         }
@@ -1007,8 +1007,8 @@ tGATT_TCB *gatt_allocate_tcb_by_bdaddr(BD_ADDR bda, tBT_TRANSPORT transport)
 
         if (allocated) {
             memset(p_tcb, 0, sizeof(tGATT_TCB));
-            p_tcb->pending_enc_clcb = fixed_queue_new(SIZE_MAX);
-            p_tcb->pending_ind_q = fixed_queue_new(SIZE_MAX);
+            p_tcb->pending_enc_clcb = fixed_queue_new(QUEUE_SIZE_MAX);
+            p_tcb->pending_ind_q = fixed_queue_new(QUEUE_SIZE_MAX);
             p_tcb->in_use = TRUE;
             p_tcb->tcb_idx = i;
             p_tcb->transport = transport;
@@ -2140,7 +2140,9 @@ void gatt_end_operation(tGATT_CLCB *p_clcb, tGATT_STATUS status, void *p_data)
     UINT8               op = p_clcb->operation, disc_type = GATT_DISC_MAX;
     tGATT_DISC_CMPL_CB  *p_disc_cmpl_cb = (p_clcb->p_reg) ? p_clcb->p_reg->app_cb.p_disc_cmpl_cb : NULL;
     UINT16              conn_id;
+#if (!CONFIG_BT_STACK_NO_LOG)
     UINT8               operation;
+#endif
 
     GATT_TRACE_DEBUG ("gatt_end_operation status=%d op=%d subtype=%d",
                       status, p_clcb->operation, p_clcb->op_subtype);
@@ -2182,7 +2184,10 @@ void gatt_end_operation(tGATT_CLCB *p_clcb, tGATT_STATUS status, void *p_data)
         osi_free(p_clcb->p_attr_buf);
     }
 
+#if !CONFIG_BT_STACK_NO_LOG
     operation =  p_clcb->operation;
+#endif
+
     conn_id = p_clcb->conn_id;
     btu_stop_timer(&p_clcb->rsp_timer_ent);
 
@@ -2192,9 +2197,10 @@ void gatt_end_operation(tGATT_CLCB *p_clcb, tGATT_STATUS status, void *p_data)
         (*p_disc_cmpl_cb)(conn_id, disc_type, status);
     } else if (p_cmpl_cb && op) {
         (*p_cmpl_cb)(conn_id, op, status, &cb_data);
-    } else
+    } else {
         GATT_TRACE_WARNING ("gatt_end_operation not sent out op=%d p_disc_cmpl_cb:%p p_cmpl_cb:%p",
                             operation, p_disc_cmpl_cb, p_cmpl_cb);
+    }
 }
 
 /*******************************************************************************
@@ -2258,6 +2264,7 @@ void gatt_cleanup_upon_disc(BD_ADDR bda, UINT16 reason, tBT_TRANSPORT transport)
         GATT_TRACE_DEBUG ("exit gatt_cleanup_upon_disc ");
         BTM_Recovery_Pre_State();
     }
+    gatt_delete_dev_from_srv_chg_clt_list(bda);
 }
 /*******************************************************************************
 **
@@ -2396,7 +2403,7 @@ tGATT_BG_CONN_DEV *gatt_alloc_bg_dev(BD_ADDR remote_bda)
 **
 ** Function         gatt_add_bg_dev_list
 **
-** Description      add/remove device from the back ground connection device list
+** Description      add/remove device from the background connection device list
 **
 ** Returns          TRUE if device added to the list; FALSE failed
 **
@@ -2536,7 +2543,7 @@ BOOLEAN gatt_find_app_for_bg_dev(BD_ADDR bd_addr, tGATT_IF *p_gatt_if)
 **
 ** Function         gatt_remove_bg_dev_from_list
 **
-** Description      add/remove device from the back ground connection device list or
+** Description      add/remove device from the background connection device list or
 **                  listening to advertising list.
 **
 ** Returns          pointer to the device record
@@ -2599,7 +2606,7 @@ BOOLEAN gatt_remove_bg_dev_from_list(tGATT_REG *p_reg, BD_ADDR bd_addr, BOOLEAN 
 **
 ** Function         gatt_deregister_bgdev_list
 **
-** Description      deregister all related back ground connetion device.
+** Description      deregister all related background connection device.
 **
 ** Returns          pointer to the device record
 **

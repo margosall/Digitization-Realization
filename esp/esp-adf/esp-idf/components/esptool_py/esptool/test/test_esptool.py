@@ -8,15 +8,15 @@ Chip name & serial port are passed in as arguments to test. Same test suite
 runs on esp8266 & esp32 (some addresses will change, see below.)
 
 """
-import subprocess
-import unittest
-import sys
-import os.path
 import os
-import tempfile
-import warnings
-import time
+import os.path
 import re
+import subprocess
+import sys
+import tempfile
+import time
+import unittest
+import serial
 
 # point is this file is not 4 byte aligned in length
 NODEMCU_FILE = "nodemcu-master-7-modules-2017-01-19-11-10-03-integer.bin"
@@ -28,10 +28,16 @@ try:
 except KeyError:
     ESPTOOL_PY = os.path.join(TEST_DIR, "..", "esptool.py")
 
-global default_baudrate, chip, serialport
-default_baudrate = 115200 # can override on command line
-chip = None # set on command line
-serialport = None # set on command line
+# Command line options for test environment
+global default_baudrate, chip, serialport, trace_enabled
+default_baudrate = 115200
+serialport = None
+trace_enabled = False
+
+try:
+    chip = sys.argv[2]
+except IndexError:
+    chip = None
 
 RETURN_CODE_FATAL_ERROR = 2
 
@@ -47,7 +53,8 @@ class EsptoolTestCase(unittest.TestCase):
         """
         if baud is None:
             baud = default_baudrate
-        cmd = [sys.executable, ESPTOOL_PY, "--chip", chip, "--port", serialport, "--baud", str(baud) ] + args.split(" ")
+        trace_args = [ "--trace" ] if trace_enabled else []
+        cmd = [sys.executable, ESPTOOL_PY ] + trace_args + [ "--chip", chip, "--port", serialport, "--baud", str(baud) ] + args.split(" ")
         print("Running %s..." % (" ".join(cmd)))
         try:
             output = subprocess.check_output([str(s) for s in cmd], cwd=TEST_DIR, stderr=subprocess.STDOUT)
@@ -118,7 +125,7 @@ class TestFlashing(EsptoolTestCase):
         self.verify_readback(0, 1024, "images/one_kb.bin")
 
     def test_highspeed_flash(self):
-        self.run_esptool("write_flash 0x0 images/fifty_kb.bin", baud=920600)
+        self.run_esptool("write_flash 0x0 images/fifty_kb.bin", baud=921600)
         self.verify_readback(0, 50*1024, "images/fifty_kb.bin")
 
     def test_adjacent_flash(self):
@@ -149,11 +156,11 @@ class TestFlashing(EsptoolTestCase):
         self.verify_readback(0, 4096, "images/sector.bin")
         self.verify_readback(4096, 50*1024, "images/fifty_kb.bin")
 
+    @unittest.skipUnless(chip == 'esp32', 'ESP32 only')
     def test_compressed_nostub_flash(self):
-        if chip == "esp32":
-            self.run_esptool("--no-stub write_flash -z 0x0 images/sector.bin 0x1000 images/fifty_kb.bin")
-            self.verify_readback(0, 4096, "images/sector.bin")
-            self.verify_readback(4096, 50*1024, "images/fifty_kb.bin")
+        self.run_esptool("--no-stub write_flash -z 0x0 images/sector.bin 0x1000 images/fifty_kb.bin")
+        self.verify_readback(0, 4096, "images/sector.bin")
+        self.verify_readback(4096, 50*1024, "images/fifty_kb.bin")
 
     def _test_partition_table_then_bootloader(self, args):
         self.run_esptool(args + " 0x4000 images/partitions_singleapp.bin")
@@ -199,6 +206,17 @@ class TestFlashing(EsptoolTestCase):
 
     def test_compressible_file(self):
         self.run_esptool("write_flash 0x10000 images/one_mb_zeroes.bin")
+
+    def test_zero_length(self):
+        # Zero length files are skipped with a warning
+        output = self.run_esptool("write_flash 0x10000 images/one_kb.bin 0x11000 images/zerolength.bin")
+        self.verify_readback(0x10000, 1024, "images/one_kb.bin")
+        self.assertIn("zerolength.bin is empty", output)
+
+    def test_single_byte(self):
+        output = self.run_esptool("write_flash 0x0 images/onebyte.bin")
+        self.verify_readback(0x0, 1, "images/onebyte.bin")
+
 
 class TestFlashSizes(EsptoolTestCase):
 
@@ -259,6 +277,11 @@ class TestErase(EsptoolTestCase):
         empty = self.readback(0x10000, 0x1000)
         self.assertTrue(empty == b'\xFF'*0x1000)
 
+    def test_large_region_erase(self):
+        # verifies that erasing a large region doesn't time out
+        self.run_esptool("erase_region 0x0 0x100000")
+
+
 class TestSectorBoundaries(EsptoolTestCase):
 
     def test_end_sector(self):
@@ -305,6 +328,7 @@ class TestReadIdentityValues(EsptoolTestCase):
         self.assertNotEqual("00:00:00:00:00:00", mac)
         self.assertNotEqual("ff:ff:ff:ff:ff:ff", mac)
 
+    @unittest.skipUnless(chip == 'esp8266', 'ESP8266 only')
     def test_read_chip_id(self):
         output = self.run_esptool("chip_id")
         idstr = re.search("Chip ID: 0x([0-9a-f]+)", output)
@@ -362,12 +386,51 @@ class TestKeepImageSettings(EsptoolTestCase):
         self.run_esptool("verify_flash -fs 2MB -fm qio -ff 80m 0x%x %s" % (self.flash_offset, self.HEADER_ONLY))
         self.run_esptool_error("verify_flash 0x%x %s" % (self.flash_offset, self.HEADER_ONLY))
 
+
+class TestLoadRAM(EsptoolTestCase):
+    def test_load_ram(self):
+        """ Verify load_ram command
+
+        The "hello world" binary programs for each chip print
+        "Hello world!\n" to the serial port.
+        """
+        self.run_esptool("load_ram images/helloworld-%s.bin" % chip)
+        p = serial.serial_for_url(serialport, default_baudrate)
+        p.timeout = 0.2
+        self.assertIn(b"Hello world!", p.read(32))
+        p.close()
+
+
+class TestDeepSleepFlash(EsptoolTestCase):
+
+    @unittest.skipUnless(chip == 'esp8266', 'ESP8266 only')
+    def test_deep_sleep_flash(self):
+        """ Regression test for https://github.com/espressif/esptool/issues/351
+
+        ESP8266 deep sleep can disable SPI flash chip, stub loader (or ROM loader) needs to re-enable it.
+
+        NOTE: If this test fails, the ESP8266 may need a hard power cycle (probably with GPIO0 held LOW)
+        to recover.
+        """
+        # not even necessary to wake successfully from sleep, going into deep sleep is enough
+        # (so GPIO16, etc, config is not important for this test)
+        self.run_esptool("write_flash 0x0 images/esp8266_deepsleep.bin", baud=230400)
+
+        time.sleep(0.25)  # give ESP8266 time to enter deep sleep
+
+        self.run_esptool("write_flash 0x0 images/fifty_kb.bin", baud=230400)
+        self.verify_readback(0, 50*1024, "images/fifty_kb.bin")
+
+
 if __name__ == '__main__':
     if len(sys.argv) < 3:
-        print("Usage: %s <serial port> <chip name> [optional default baud rate] [optional tests]" % sys.argv[0])
+        print("Usage: %s [--trace] <serial port> <chip name> [optional default baud rate] [optional tests]" % sys.argv[0])
         sys.exit(1)
+    if sys.argv[1] == "--trace":
+        trace_enabled = True
+        sys.argv.pop(1)
     serialport = sys.argv[1]
-    chip = sys.argv[2]
+    # chip is already set to sys.argv[2], so @skipUnless can evaluate against it
     args_used = 2
     try:
         default_baudrate = int(sys.argv[3])
@@ -376,7 +439,9 @@ if __name__ == '__main__':
         pass # no additional args
     except ValueError:
         pass # arg3 not a number, must be a test name
+
     # unittest also uses argv, so trim the args we used
-    print("Running esptool.py tests...")
     sys.argv = [ sys.argv[0] ] + sys.argv[args_used + 1:]
+
+    print("Running esptool.py tests...")
     unittest.main(buffer=True)

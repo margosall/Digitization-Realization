@@ -1,16 +1,10 @@
-// Copyright 2015-2016 Espressif Systems (Shanghai) PTE LTD
-//
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
+/*
+   This example code is in the Public Domain (or CC0 licensed, at your option.)
 
-//     http://www.apache.org/licenses/LICENSE-2.0
-//
-// Unless required by applicable law or agreed to in writing, software
-// distributed under the License is distributed on an "AS IS" BASIS,
-// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-// See the License for the specific language governing permissions and
-// limitations under the License.
+   Unless required by applicable law or agreed to in writing, this
+   software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
+   CONDITIONS OF ANY KIND, either express or implied.
+*/
 
 /****************************************************************************
 *
@@ -22,14 +16,13 @@
 ****************************************************************************/
 
 
-
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
-#include "freertos/event_groups.h"
-#include "esp_system.h"
-#include "esp_log.h"
-#include "nvs_flash.h"
-#include "esp_bt.h"
+ #include "freertos/FreeRTOS.h"
+ #include "freertos/task.h"
+ #include "freertos/event_groups.h"
+ #include "esp_system.h"
+ #include "esp_log.h"
+ #include "nvs_flash.h"
+ #include "esp_bt.h"
 
 #include "esp_gap_ble_api.h"
 #include "esp_gatts_api.h"
@@ -45,7 +38,10 @@
 #define SAMPLE_DEVICE_NAME          "ESP_GATTS_DEMO"
 #define SVC_INST_ID                 0
 
-#define GATTS_DEMO_CHAR_VAL_LEN_MAX 100
+/* The max length of characteristic value. When the gatt client write or prepare write, 
+*  the data length must be less than GATTS_DEMO_CHAR_VAL_LEN_MAX. 
+*/
+#define GATTS_DEMO_CHAR_VAL_LEN_MAX 500
 #define PREPARE_BUF_MAX_SIZE        1024
 #define CHAR_DECLARATION_SIZE       (sizeof(uint8_t))
 
@@ -96,8 +92,8 @@ static esp_ble_adv_data_t adv_data = {
     .set_scan_rsp        = false,
     .include_name        = true,
     .include_txpower     = true,
-    .min_interval        = 0x20,
-    .max_interval        = 0x40,
+    .min_interval        = 0x0006, //slave connection min interval, Time = min_interval * 1.25 msec
+    .max_interval        = 0x0010, //slave connection max interval, Time = max_interval * 1.25 msec
     .appearance          = 0x00,
     .manufacturer_len    = 0,    //TEST_MANUFACTURER_DATA_LEN,
     .p_manufacturer_data = NULL, //test_manufacturer,
@@ -113,8 +109,8 @@ static esp_ble_adv_data_t scan_rsp_data = {
     .set_scan_rsp        = true,
     .include_name        = true,
     .include_txpower     = true,
-    .min_interval        = 0x20,
-    .max_interval        = 0x40,
+    .min_interval        = 0x0006,
+    .max_interval        = 0x0010,
     .appearance          = 0x00,
     .manufacturer_len    = 0, //TEST_MANUFACTURER_DATA_LEN,
     .p_manufacturer_data = NULL, //&test_manufacturer[0],
@@ -262,14 +258,14 @@ static void gap_event_handler(esp_gap_ble_cb_event_t event, esp_ble_gap_cb_param
             break;
         case ESP_GAP_BLE_ADV_STOP_COMPLETE_EVT:
             if (param->adv_stop_cmpl.status != ESP_BT_STATUS_SUCCESS) {
-                ESP_LOGE(GATTS_TABLE_TAG, "advertising stop failed");
+                ESP_LOGE(GATTS_TABLE_TAG, "Advertising stop failed");
             }
             else {
-                ESP_LOGI(GATTS_TABLE_TAG, "stop adv successfully\n");
+                ESP_LOGI(GATTS_TABLE_TAG, "Stop adv successfully\n");
             }
             break;
         case ESP_GAP_BLE_UPDATE_CONN_PARAMS_EVT:
-            ESP_LOGI(GATTS_TABLE_TAG, "update connetion params status = %d, min_int = %d, max_int = %d,conn_int = %d,latency = %d, timeout = %d",
+            ESP_LOGI(GATTS_TABLE_TAG, "update connection params status = %d, min_int = %d, max_int = %d,conn_int = %d,latency = %d, timeout = %d",
                   param->update_conn_params.status,
                   param->update_conn_params.min_int,
                   param->update_conn_params.max_int,
@@ -290,7 +286,7 @@ void example_prepare_write_event_env(esp_gatt_if_t gatts_if, prepare_type_env_t 
         prepare_write_env->prepare_buf = (uint8_t *)malloc(PREPARE_BUF_MAX_SIZE * sizeof(uint8_t));
         prepare_write_env->prepare_len = 0;
         if (prepare_write_env->prepare_buf == NULL) {
-            ESP_LOGE(GATTS_TABLE_TAG, "%s, gatt_server prep no mem", __func__);
+            ESP_LOGE(GATTS_TABLE_TAG, "%s, Gatt_server prep no mem", __func__);
             status = ESP_GATT_NO_RESOURCES;
         }
     } else {
@@ -311,7 +307,7 @@ void example_prepare_write_event_env(esp_gatt_if_t gatts_if, prepare_type_env_t 
             memcpy(gatt_rsp->attr_value.value, param->write.value, param->write.len);
             esp_err_t response_err = esp_ble_gatts_send_response(gatts_if, param->write.conn_id, param->write.trans_id, status, gatt_rsp);
             if (response_err != ESP_OK){
-               ESP_LOGE(GATTS_TABLE_TAG, "send response error");
+               ESP_LOGE(GATTS_TABLE_TAG, "Send response error");
             }
             free(gatt_rsp);
         }else{
@@ -385,6 +381,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
        	    break;
         case ESP_GATTS_WRITE_EVT:
             if (!param->write.is_prep){
+                // the data length of gattc write  must be less than GATTS_DEMO_CHAR_VAL_LEN_MAX.
                 ESP_LOGI(GATTS_TABLE_TAG, "GATT_WRITE_EVT, handle = %d, value len = %d, value :", param->write.handle, param->write.len);
                 esp_log_buffer_hex(GATTS_TABLE_TAG, param->write.value, param->write.len);
                 if (heart_rate_handle_table[IDX_CHAR_CFG_A] == param->write.handle && param->write.len == 2){
@@ -427,7 +424,8 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
                 example_prepare_write_event_env(gatts_if, &prepare_write_env, param);
             }
       	    break;
-        case ESP_GATTS_EXEC_WRITE_EVT:
+        case ESP_GATTS_EXEC_WRITE_EVT: 
+            // the length of gattc prapare write data must be less than GATTS_DEMO_CHAR_VAL_LEN_MAX. 
             ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_EXEC_WRITE_EVT");
             example_exec_write_event_env(&prepare_write_env, param);
             break;
@@ -435,7 +433,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
             ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_MTU_EVT, MTU %d", param->mtu.mtu);
             break;
         case ESP_GATTS_CONF_EVT:
-            ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_CONF_EVT, status = %d", param->conf.status);
+            ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_CONF_EVT, status = %d, attr_handle %d", param->conf.status, param->conf.handle);
             break;
         case ESP_GATTS_START_EVT:
             ESP_LOGI(GATTS_TABLE_TAG, "SERVICE_START_EVT, status %d, service_handle %d", param->start.status, param->start.service_handle);
@@ -454,7 +452,7 @@ static void gatts_profile_event_handler(esp_gatts_cb_event_t event, esp_gatt_if_
             esp_ble_gap_update_conn_params(&conn_params);
             break;
         case ESP_GATTS_DISCONNECT_EVT:
-            ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_DISCONNECT_EVT, reason = %d", param->disconnect.reason);
+            ESP_LOGI(GATTS_TABLE_TAG, "ESP_GATTS_DISCONNECT_EVT, reason = 0x%x", param->disconnect.reason);
             esp_ble_gap_start_advertising(&adv_params);
             break;
         case ESP_GATTS_CREAT_ATTR_TAB_EVT:{
@@ -519,7 +517,7 @@ void app_main()
 
     /* Initialize NVS. */
     ret = nvs_flash_init();
-    if (ret == ESP_ERR_NVS_NO_FREE_PAGES) {
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES || ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
         ESP_ERROR_CHECK(nvs_flash_erase());
         ret = nvs_flash_init();
     }
@@ -530,25 +528,25 @@ void app_main()
     esp_bt_controller_config_t bt_cfg = BT_CONTROLLER_INIT_CONFIG_DEFAULT();
     ret = esp_bt_controller_init(&bt_cfg);
     if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s enable controller failed", __func__);
+        ESP_LOGE(GATTS_TABLE_TAG, "%s enable controller failed: %s", __func__, esp_err_to_name(ret));
         return;
     }
 
     ret = esp_bt_controller_enable(ESP_BT_MODE_BLE);
     if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s enable controller failed", __func__);
+        ESP_LOGE(GATTS_TABLE_TAG, "%s enable controller failed: %s", __func__, esp_err_to_name(ret));
         return;
     }
 
     ret = esp_bluedroid_init();
     if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s init bluetooth failed", __func__);
+        ESP_LOGE(GATTS_TABLE_TAG, "%s init bluetooth failed: %s", __func__, esp_err_to_name(ret));
         return;
     }
 
     ret = esp_bluedroid_enable();
     if (ret) {
-        ESP_LOGE(GATTS_TABLE_TAG, "%s enable bluetooth failed", __func__);
+        ESP_LOGE(GATTS_TABLE_TAG, "%s enable bluetooth failed: %s", __func__, esp_err_to_name(ret));
         return;
     }
 
@@ -575,4 +573,3 @@ void app_main()
         ESP_LOGE(GATTS_TABLE_TAG, "set local  MTU failed, error code = %x", local_mtu_ret);
     }
 }
-

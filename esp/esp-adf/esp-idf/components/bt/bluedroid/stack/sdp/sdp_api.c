@@ -26,15 +26,15 @@
 #include <string.h>
 //#include <stdio.h>
 
-#include "bt_target.h"
+#include "common/bt_target.h"
 //#include "bt_utils.h"
-#include "l2cdefs.h"
-#include "hcidefs.h"
-#include "hcimsgs.h"
-#include "bt_defs.h"
-#include "sdp_api.h"
+#include "stack/l2cdefs.h"
+#include "stack/hcidefs.h"
+#include "stack/hcimsgs.h"
+#include "common/bt_defs.h"
+#include "stack/sdp_api.h"
 #include "sdpint.h"
-#include "btu.h"
+#include "stack/btu.h"
 
 #if (SDP_INCLUDED == TRUE)
 /**********************************************************************
@@ -899,11 +899,11 @@ UINT16 SDP_DiDiscover( BD_ADDR remote_device, tSDP_DISCOVERY_DB *p_db,
     init_uuid.len = 2;
     init_uuid.uu.uuid16 = di_uuid;
 
-    if ( SDP_InitDiscoveryDb(p_db, len, num_uuids, &init_uuid, 0, NULL) )
+    if ( SDP_InitDiscoveryDb(p_db, len, num_uuids, &init_uuid, 0, NULL) ) {
         if ( SDP_ServiceSearchRequest(remote_device, p_db, p_cb) ) {
             result = SDP_SUCCESS;
         }
-
+    }
     return result;
 #else
     return SDP_DI_DISC_FAILED;

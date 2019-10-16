@@ -26,7 +26,11 @@
 #include "esp_log.h"
 #include "driver/i2c.h"
 #include "es8388.h"
-#include "board.h"
+#include "board_pins_config.h"
+
+#ifdef CONFIG_ESP_LYRAT_V4_3_BOARD
+#include "headphone_detect.h"
+#endif
 
 static const char *ES_TAG = "ES8388_DRIVER";
 
@@ -36,13 +40,21 @@ static const char *ES_TAG = "ES8388_DRIVER";
         return b;\
     }
 
-static const i2c_config_t es_i2c_cfg = {
+static i2c_config_t es_i2c_cfg = {
     .mode = I2C_MODE_MASTER,
-    .sda_io_num = IIC_DATA,
-    .scl_io_num = IIC_CLK,
     .sda_pullup_en = GPIO_PULLUP_ENABLE,
     .scl_pullup_en = GPIO_PULLUP_ENABLE,
     .master.clk_speed = 100000
+};
+
+audio_hal_func_t AUDIO_CODEC_ES8388_DEFAULT_HANDLE = {
+    .audio_codec_initialize = es8388_init,
+    .audio_codec_deinitialize = es8388_deinit,
+    .audio_codec_ctrl = es8388_ctrl_state,
+    .audio_codec_config_iface = es8388_config_i2s,
+    .audio_codec_set_mute = es8388_set_voice_mute,
+    .audio_codec_set_volume = es8388_set_voice_volume,
+    .audio_codec_get_volume = es8388_get_voice_volume,
 };
 
 static int es_write_reg(uint8_t slave_add, uint8_t reg_add, uint8_t data)
@@ -89,6 +101,7 @@ static int es_read_reg(uint8_t reg_add, uint8_t *pData)
 static int i2c_init()
 {
     int res;
+    get_i2c_pins(I2C_NUM_0, &es_i2c_cfg);
     res = i2c_param_config(I2C_NUM_0, &es_i2c_cfg);
     res |= i2c_driver_install(I2C_NUM_0, es_i2c_cfg.mode, 0, 0, 0);
     ES_ASSERT(res, "i2c_init error", -1);
@@ -249,6 +262,11 @@ esp_err_t es8388_deinit(void)
 {
     int res = 0;
     res = es_write_reg(ES8388_ADDR, ES8388_CHIPPOWER, 0xFF);  //reset and stop es8388
+    i2c_driver_delete(I2C_NUM_0);
+#ifdef CONFIG_ESP_LYRAT_V4_3_BOARD
+    headphone_detect_deinit();
+#endif
+
     return res;
 }
 
@@ -261,8 +279,7 @@ esp_err_t es8388_init(audio_hal_codec_config_t *cfg)
 {
     int res = 0;
 #ifdef CONFIG_ESP_LYRAT_V4_3_BOARD
-    #include "headphone_detect.h"
-    headphone_detect_init();
+    headphone_detect_init(get_headphone_detect_gpio());
 #endif
 
     res = i2c_init(); // ESP32 in master mode
@@ -311,9 +328,9 @@ esp_err_t es8388_init(audio_hal_codec_config_t *cfg)
     res |= es_write_reg(ES8388_ADDR, ES8388_ADCCONTROL5, 0x02);  //ADCFsMode,singel SPEED,RATIO=256
     //ALC for Microphone
     res |= es8388_set_adc_dac_volume(ES_MODULE_ADC, 0, 0);      // 0db
-    res |= es_write_reg(ES8388_ADDR, ES8388_ADCPOWER, 0x09); //Power up ADC, Enable LIN&RIN, Power down MICBIAS, set int1lp to low power mode
-    /* stop all */
-
+    res |= es_write_reg(ES8388_ADDR, ES8388_ADCPOWER, 0x09); //Power on ADC, Enable LIN&RIN, Power off MICBIAS, set int1lp to low power mode
+    /* enable es8388 PA */
+    es8388_pa_power(true);
     ESP_LOGI(ES_TAG, "init,out:%02x, in:%02x", cfg->dac_output, cfg->adc_input);
     return res;
 }
@@ -366,6 +383,7 @@ int es8388_set_voice_volume(int volume)
     res |= es_write_reg(ES8388_ADDR, ES8388_DACCONTROL27, 0);
     return res;
 }
+
 /**
  *
  * @return
@@ -417,7 +435,7 @@ int es8388_set_bits_per_sample(es_module_t mode, es_bits_length_t bits_length)
 }
 
 /**
- * @brief Configure ES8388 DAC mute or not. Basicly you can use this function to mute the output or don't
+ * @brief Configure ES8388 DAC mute or not. Basically you can use this function to mute the output or unmute
  *
  * @param enable: enable or disable
  *
@@ -425,7 +443,7 @@ int es8388_set_bits_per_sample(es_module_t mode, es_bits_length_t bits_length)
  *     - (-1) Parameter error
  *     - (0)   Success
  */
-int es8388_set_voice_mute(int enable)
+int es8388_set_voice_mute(bool enable)
 {
     int res;
     uint8_t reg = 0;
@@ -548,13 +566,13 @@ void es8388_pa_power(bool enable)
     memset(&io_conf, 0, sizeof(io_conf));
     io_conf.intr_type = GPIO_PIN_INTR_DISABLE;
     io_conf.mode = GPIO_MODE_OUTPUT;
-    io_conf.pin_bit_mask = BIT(GPIO_PA_EN);
+    io_conf.pin_bit_mask = BIT(get_pa_enable_gpio());
     io_conf.pull_down_en = 0;
     io_conf.pull_up_en = 0;
     gpio_config(&io_conf);
     if (enable) {
-        gpio_set_level(GPIO_PA_EN, 1);
+        gpio_set_level(get_pa_enable_gpio(), 1);
     } else {
-        gpio_set_level(GPIO_PA_EN, 0);
+        gpio_set_level(get_pa_enable_gpio(), 0);
     }
 }

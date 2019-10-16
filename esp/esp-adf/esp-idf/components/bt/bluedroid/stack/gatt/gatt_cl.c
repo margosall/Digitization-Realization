@@ -22,12 +22,12 @@
  *
  ******************************************************************************/
 
-#include "bt_target.h"
+#include "common/bt_target.h"
 
 #if BLE_INCLUDED == TRUE && GATTC_INCLUDED == TRUE
 
 #include <string.h>
-#include "allocator.h"
+#include "osi/allocator.h"
 #include "gatt_int.h"
 #include "l2c_int.h"
 
@@ -1038,7 +1038,10 @@ BOOLEAN gatt_cl_send_next_cmd_inq(tGATT_TCB *p_tcb)
         if (att_ret == GATT_SUCCESS || att_ret == GATT_CONGESTED) {
             sent = TRUE;
             p_cmd->to_send = FALSE;
-            p_cmd->p_cmd = NULL;
+            if(p_cmd->p_cmd) {
+                osi_free(p_cmd->p_cmd);
+                p_cmd->p_cmd = NULL;
+            }
 
             /* dequeue the request if is write command or sign write */
             if (p_cmd->op_code != GATT_CMD_WRITE && p_cmd->op_code != GATT_SIGN_CMD_WRITE) {

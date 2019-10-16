@@ -5,13 +5,28 @@
 COMPONENT_SRCDIRS := . hwcrypto
 LIBS ?=
 ifndef CONFIG_NO_BLOBS
-LIBS += core rtc net80211 pp wpa smartconfig coexist wps wpa2 espnow phy
+LIBS += core rtc net80211 pp wpa smartconfig coexist wps wpa2 espnow phy mesh
+endif
+
+ifdef CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY  
+   # This linker script must come before esp32.common.ld
+   LINKER_SCRIPTS += esp32.extram.bss.ld
 endif
 
 #Linker scripts used to link the final application.
 #Warning: These linker scripts are only used when the normal app is compiled; the bootloader
 #specifies its own scripts.
 LINKER_SCRIPTS += esp32.common.ld esp32.rom.ld esp32.peripherals.ld
+
+# Add a different linker search path depending on WiFi optimisations
+ifdef CONFIG_ESP32_WIFI_IRAM_OPT
+COMPONENT_ADD_LDFLAGS += -L $(COMPONENT_PATH)/ld/wifi_iram_opt
+else
+COMPONENT_ADD_LDFLAGS += -L $(COMPONENT_PATH)/ld/wifi_iram_noopt
+endif
+
+#Force pure functions from libgcc.a to be linked from ROM
+LINKER_SCRIPTS += esp32.rom.libgcc.ld
 
 #SPI-RAM incompatible functions can be used in when the SPI RAM 
 #workaround is not enabled.

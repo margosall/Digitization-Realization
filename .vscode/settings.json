@@ -9,6 +9,7 @@
         "esp_log.h": "c",
         "ai_audio_v1_0_board.h": "c",
         "audio_common.h": "c",
-        "esp_dsp.h": "c"
+        "esp_dsp.h": "c",
+        "random": "c"
     }
 }

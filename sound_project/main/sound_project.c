@@ -6,10 +6,12 @@
    software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES OR
    CONDITIONS OF ANY KIND, either express or implied.
 */
+// #include "Arduino.h"
 
 #include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
+#include <math.h>
 
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -27,43 +29,89 @@
 #include "i2s_stream.h"
 #include "raw_stream.h"
 
+#include "esp_peripherals.h"
+#include "periph_button.h"
+
 #include "filter_resample.h"
 
 #include "sound_project.h"
+#include "buttonPins.h"
 
 #include "esp_dsp.h"
+
+// #include "esp32-hal-log.h"
+
 
 static const char *TAG = "sound_project";
 static const char *EVENT_TAG = "board";
 
 //AUDIO CONFIGURATION
-#define AUDIOCHUNKSIZE 480
+#define AUDIOCHUNKSIZE 4096
 #define SAMPLERATE 44100
 #define OUTPUTCHANNELS 1
-#define SAMPLETIMEINMS AUDIOCHUNKSIZE/SAMPLERATE*1000
+#define SAMPLETIMEINMS (AUDIOCHUNKSIZE * 500 / SAMPLERATE)
 
 //INPUT SOURCES
 #define MIC AUDIO_HAL_CODEC_MODE_ENCODE
 #define LINEIN AUDIO_HAL_CODEC_MODE_LINE_IN
 
+// void findMinMax(int16_t* data, int len) {
+//     min=max=data[0];
+//     for (int i = 0; i < len; i++) {
+//         if(min > data[i])
+//             min = data[i];   
+//         if(max < data[i])
+//             max = data[i];  
+//     }
+// }
+
+bool started = 0;
+
 void app_main()
 {
+    // initArduino();
+    // pinMode(KEY6_PIN, INPUT_PULLUP);
     sound_input_struct_t *soundInput = setupRecording(SAMPLERATE, LINEIN, OUTPUTCHANNELS);
-    while (1) {
-        int bytesRead = raw_stream_read(soundInput->raw_read, (char *)soundInput->buffer, AUDIOCHUNKSIZE * sizeof(short));
+    printf("Free Size %u\r\n",heap_caps_get_free_size(MALLOC_CAP_8BIT));
 
-        for (int i = 0; i < bytesRead>>1; i++) {
-            printf("%hi ", soundInput->buffer[i]);
+    ringbuf_handle_t rb = audio_element_get_output_ringbuf(soundInput->i2s_stream_reader);
+
+    while (1) {
+
+        int bytesRead = rb_read(rb, (char *)soundInput->buffer, AUDIOCHUNKSIZE * sizeof(int16_t), portMAX_DELAY);
+        // printf("%d\n", bytesRead);
+        // while(!digitalRead(KEY6_PIN)) {
+        //     if (!started) {
+        //         started ^= 1;
+        //         audio_pipeline_run(soundInput->pipeline);
+        //     }
+
+
+            // for (int i = 0; i < bytesRead>>1; i++) {
+            //     printf("%hi ", soundInput->buffer[i]);
+            // }
+            // printf("\n");
+            vTaskDelay(SAMPLETIMEINMS / portTICK_RATE_MS);
+
+            // audio_pipeline_reset_ringbuffer(soundInput->pipeline);
+            
         }
-        printf("\n");
-        vTaskDelay(SAMPLETIMEINMS / portTICK_RATE_MS);
-    }
+        // if (started) {
+        //     printf("\n");
+        //     started ^= 1;
+        //     audio_pipeline_stop(soundInput->pipeline);
+        //     audio_pipeline_wait_for_stop(soundInput->pipeline);
+        // }
+
+        // vTaskDelay(100 / portTICK_RATE_MS);
+    // }
 }
 
 sound_input_struct_t *setupRecording(int sampleRate, audio_hal_codec_mode_t source, int32_t outputChannels)
 {
-    esp_log_level_set("*", ESP_LOG_WARN);
+    esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set(TAG, ESP_LOG_INFO);
+    esp_log_level_set(EVENT_TAG, ESP_LOG_INFO);
 
 
     sound_input_struct_t *soundInput = (sound_input_struct_t *)malloc(sizeof(sound_input_struct_t));
@@ -115,6 +163,7 @@ sound_input_struct_t *setupRecording(int sampleRate, audio_hal_codec_mode_t sour
 
     ESP_LOGI(EVENT_TAG, "[ 4 ] Link elements together [codec_chip]-->i2s_stream-->filter-->raw-->[SR]");
     audio_pipeline_link(pipeline, (const char *[]) {"i2s", "filter", "raw"}, 3);
+    // audio_pipeline_link(pipeline, (const char *[]) {"i2s", "raw"}, 2);
 
     ESP_LOGI(EVENT_TAG, "[ 5 ] Start audio_pipeline");
     audio_pipeline_run(pipeline);

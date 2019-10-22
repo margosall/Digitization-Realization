@@ -45,43 +45,29 @@ static const char *TAG = "sound_project";
 static const char *EVENT_TAG = "board";
 
 //AUDIO CONFIGURATION
-#define AUDIOCHUNKSIZE 4096
+#define AUDIOCHUNKSIZE 8192
 #define SAMPLERATE 44100
+#define DOWNSAMPLE_RATE 16000
 #define OUTPUTCHANNELS 1
-#define SAMPLETIMEINMS (AUDIOCHUNKSIZE * 10000 / SAMPLERATE)
+
 
 //INPUT SOURCES
 #define MIC AUDIO_HAL_CODEC_MODE_ENCODE
 #define LINEIN AUDIO_HAL_CODEC_MODE_LINE_IN
-
-
-bool started = 0;
+#define SOURCE LINEIN
 
 void app_main()
 {
-    // initArduino();
-    // pinMode(KEY6_PIN, INPUT_PULLUP);
-    sound_input_struct_t *soundInput = setupRecording(SAMPLERATE, LINEIN, OUTPUTCHANNELS);
+    sound_input_struct_t *soundInput = setupRecording(SAMPLERATE, SOURCE, OUTPUTCHANNELS);
     printf("Free Size %u\r\n",heap_caps_get_free_size(MALLOC_CAP_8BIT));
 
-    // ringbuf_handle_t rb = audio_element_get_output_ringbuf(soundInput->i2s_stream_reader);
-
     while (1) {
-
-        // vTaskDelay(SAMPLETIMEINMS / portTICK_RATE_MS);
-        int bytesRead = raw_stream_read(soundInput->raw_read, (char *)soundInput->buffer, AUDIOCHUNKSIZE * sizeof(int16_t));
-
-        // vTaskDelay(SAMPLETIMEINMS / portTICK_RATE_MS);
-
-
-            for (int i = 0; i < AUDIOCHUNKSIZE>>1; i++) {
-                printf("%hi ", soundInput->buffer[i]);
-            }
-            printf("\n");
-
-            
-            // audio_pipeline_reset_ringbuffer(soundInput->pipeline);
-            
+        raw_stream_read(soundInput->raw_read, (char *)soundInput->buffer, AUDIOCHUNKSIZE * sizeof(int16_t));
+        for (int i = 0; i < AUDIOCHUNKSIZE; i++) {
+            printf("%hi ", soundInput->buffer[i]);
+        }
+        printf("\n");
+        vTaskDelay(15 / portTICK_PERIOD_MS);
         }
 }
 
@@ -102,7 +88,6 @@ sound_input_struct_t *setupRecording(int sampleRate, audio_hal_codec_mode_t sour
         return NULL;
     }
 
-
     ESP_LOGI(EVENT_TAG, "[ 1 ] Start codec chip");
     audio_board_handle_t board_handle = audio_board_init();
     audio_hal_ctrl_codec(board_handle->audio_hal, source, AUDIO_HAL_CTRL_START);
@@ -122,14 +107,14 @@ sound_input_struct_t *setupRecording(int sampleRate, audio_hal_codec_mode_t sour
     rsp_filter_cfg_t rsp_cfg = DEFAULT_RESAMPLE_FILTER_CONFIG();
     rsp_cfg.src_rate = sampleRate;
     rsp_cfg.src_ch = 2;
-    rsp_cfg.dest_rate = sampleRate;
+    rsp_cfg.dest_rate = DOWNSAMPLE_RATE;
     rsp_cfg.dest_ch = outputChannels;
     rsp_cfg.type = AUDIO_CODEC_TYPE_ENCODER;
     filter = rsp_filter_init(&rsp_cfg);
 
     ESP_LOGI(EVENT_TAG, "[ 2.3 ] Create raw to receive data");
     raw_stream_cfg_t raw_cfg = {
-        .out_rb_size = 8 * 1024,
+        .out_rb_size = 16 * 1024,
         .type = AUDIO_STREAM_READER,
     };
     raw_read = raw_stream_init(&raw_cfg);

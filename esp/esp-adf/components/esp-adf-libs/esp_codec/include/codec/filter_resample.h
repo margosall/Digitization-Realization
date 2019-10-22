@@ -38,7 +38,7 @@ typedef struct {
 #define RSP_FILTER_TASK_STACK               (4 * 1024)
 #define RSP_FILTER_TASK_CORE                (0)
 #define RSP_FILTER_TASK_PRIO                (5)
-#define RSP_FILTER_RINGBUFFER_SIZE          (2 * 1024)
+#define RSP_FILTER_RINGBUFFER_SIZE          (8 * 1024)
 
 #define DEFAULT_RESAMPLE_FILTER_CONFIG() {          \
         .src_rate = 44100,                          \

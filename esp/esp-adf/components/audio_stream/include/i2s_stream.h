@@ -52,7 +52,7 @@ typedef struct {
 
 #define I2S_STREAM_TASK_STACK           (3072+512)
 #define I2S_STREAM_BUF_SIZE             (4096)
-#define I2S_STREAM_TASK_PRIO            (23)
+#define I2S_STREAM_TASK_PRIO            (2)
 #define I2S_STREAM_TASK_CORE            (0)
 #define I2S_STREAM_RINGBUFFER_SIZE      (8 * 1024)
 

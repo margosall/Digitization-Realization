@@ -35,18 +35,25 @@ first_data = ser.readline()
 
 current_sample = 0
 
+
 while True:
     while ser.in_waiting:
+        print(ser.in_waiting)
         try:
             reading = list(map(int, ser.readline().decode('utf-8').strip().split(' ')))
 
             signal.extend(reading)
             # signal = reading
-            
+
             signal_len = len(signal)
             
+
             chunk = len(reading)
-            
+
+            # sample_counter += chunk
+
+            # if sample_counter == 16800:
+                
             current_sample = signal_len - chunk
             # print(chunk)
 
@@ -54,19 +61,20 @@ while True:
             time_scale = np.around(np.linspace(0, signal_len*period*1000, num=len(sample_scale)), 2)
 
             ax1.set_xticks(sample_scale)
-            ax1.set_xticklabels(sample_scale)
-            ax1.set(xlabel="sample")
+            # ax1.set_xticklabels(sample_scale)
+            # ax1.set(xlabel="sample")
             
-            # ax1.set_xticklabels(time_scale)
-            # ax1.set(xlabel="t [ms]")
+            ax1.set_xticklabels(time_scale)
+            ax1.set(xlabel="t [ms]")
             # ax1.set_xlim(0, chunk)
 
 
-            f_vec = samp_rate*np.arange(chunk/2)/chunk
 
             # Calc FFT
+            f_vec = samp_rate*np.arange(chunk/2)/chunk
             fft_data = (np.abs( np.fft.fft(reading) )[0:int(np.floor(chunk/2))])/chunk
             fft_data[1:] = 2*fft_data[1:]
+            ax2.plot(f_vec, fft_data)
 
             # plt.plot(sample_numbers, reading)
             # if len(ax1.lines) != 0:
@@ -74,19 +82,21 @@ while True:
                 # del ax2.lines[0]
 
             ax1.plot(range(current_sample,signal_len), signal[current_sample:signal_len])
-            # print(reading)
-            ax2.plot(f_vec, fft_data)
+            # ax1.plot(reading)
+            # print(signal)
 
             fig.canvas.draw()
 
             image = np.fromstring(fig.canvas.tostring_rgb(), dtype=np.uint8, sep='')
             image = image.reshape(fig.canvas.get_width_height()[::-1] + (3,))
             screen.update(image)
+            #     sample_counter = 0
+            # ser.flushInput()
+
 
         except KeyboardInterrupt:
             ser.close()
         
         except Exception as e:
             print(e)
-            time.sleep(0.1)
-            
+

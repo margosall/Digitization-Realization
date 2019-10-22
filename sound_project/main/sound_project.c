@@ -35,7 +35,6 @@
 #include "filter_resample.h"
 
 #include "sound_project.h"
-#include "buttonPins.h"
 
 #include "esp_dsp.h"
 
@@ -49,21 +48,12 @@ static const char *EVENT_TAG = "board";
 #define AUDIOCHUNKSIZE 4096
 #define SAMPLERATE 44100
 #define OUTPUTCHANNELS 1
-#define SAMPLETIMEINMS (AUDIOCHUNKSIZE * 500 / SAMPLERATE)
+#define SAMPLETIMEINMS (AUDIOCHUNKSIZE * 10000 / SAMPLERATE)
 
 //INPUT SOURCES
 #define MIC AUDIO_HAL_CODEC_MODE_ENCODE
 #define LINEIN AUDIO_HAL_CODEC_MODE_LINE_IN
 
-// void findMinMax(int16_t* data, int len) {
-//     min=max=data[0];
-//     for (int i = 0; i < len; i++) {
-//         if(min > data[i])
-//             min = data[i];   
-//         if(max < data[i])
-//             max = data[i];  
-//     }
-// }
 
 bool started = 0;
 
@@ -74,37 +64,25 @@ void app_main()
     sound_input_struct_t *soundInput = setupRecording(SAMPLERATE, LINEIN, OUTPUTCHANNELS);
     printf("Free Size %u\r\n",heap_caps_get_free_size(MALLOC_CAP_8BIT));
 
-    ringbuf_handle_t rb = audio_element_get_output_ringbuf(soundInput->i2s_stream_reader);
+    // ringbuf_handle_t rb = audio_element_get_output_ringbuf(soundInput->i2s_stream_reader);
 
     while (1) {
 
-        int bytesRead = rb_read(rb, (char *)soundInput->buffer, AUDIOCHUNKSIZE * sizeof(int16_t), portMAX_DELAY);
-        // printf("%d\n", bytesRead);
-        // while(!digitalRead(KEY6_PIN)) {
-        //     if (!started) {
-        //         started ^= 1;
-        //         audio_pipeline_run(soundInput->pipeline);
-        //     }
+        // vTaskDelay(SAMPLETIMEINMS / portTICK_RATE_MS);
+        int bytesRead = raw_stream_read(soundInput->raw_read, (char *)soundInput->buffer, AUDIOCHUNKSIZE * sizeof(int16_t));
+
+        // vTaskDelay(SAMPLETIMEINMS / portTICK_RATE_MS);
 
 
-            // for (int i = 0; i < bytesRead>>1; i++) {
-            //     printf("%hi ", soundInput->buffer[i]);
-            // }
-            // printf("\n");
-            vTaskDelay(SAMPLETIMEINMS / portTICK_RATE_MS);
+            for (int i = 0; i < AUDIOCHUNKSIZE>>1; i++) {
+                printf("%hi ", soundInput->buffer[i]);
+            }
+            printf("\n");
 
+            
             // audio_pipeline_reset_ringbuffer(soundInput->pipeline);
             
         }
-        // if (started) {
-        //     printf("\n");
-        //     started ^= 1;
-        //     audio_pipeline_stop(soundInput->pipeline);
-        //     audio_pipeline_wait_for_stop(soundInput->pipeline);
-        // }
-
-        // vTaskDelay(100 / portTICK_RATE_MS);
-    // }
 }
 
 sound_input_struct_t *setupRecording(int sampleRate, audio_hal_codec_mode_t source, int32_t outputChannels)
@@ -115,7 +93,7 @@ sound_input_struct_t *setupRecording(int sampleRate, audio_hal_codec_mode_t sour
 
 
     sound_input_struct_t *soundInput = (sound_input_struct_t *)malloc(sizeof(sound_input_struct_t));
-    int16_t *buff = (int16_t *)calloc(AUDIOCHUNKSIZE,sizeof(int16_t));
+    int16_t *buff = (int16_t *)malloc(AUDIOCHUNKSIZE * sizeof(int16_t));
     audio_pipeline_handle_t pipeline;
     audio_element_handle_t i2s_stream_reader, filter, raw_read;
 

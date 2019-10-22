@@ -15,7 +15,7 @@ screen = pf.screen(title='Plot')
 
 
 chans = 1 # 1 channel
-samp_rate = 44100 # 44.1kHz sampling rate
+samp_rate = 16000 # 44.1kHz sampling rate
 period = 1/samp_rate
 # chunk = 4096 # 2^12 samples for buffer
 
@@ -29,18 +29,29 @@ ax2.set_xscale('log')
 
 ser = serial.Serial('/dev/ttyUSB1', 1500000)
 
+signal = []
+
 first_data = ser.readline()
+
+current_sample = 0
 
 while True:
     while ser.in_waiting:
         try:
-            reading = np.array(list(map(int, ser.readline().decode('utf-8').strip().split(' '))))
+            reading = list(map(int, ser.readline().decode('utf-8').strip().split(' ')))
 
+            signal.extend(reading)
+            # signal = reading
+            
+            signal_len = len(signal)
+            
             chunk = len(reading)
+            
+            current_sample = signal_len - chunk
             # print(chunk)
 
-            sample_scale = np.around(np.arange(0, chunk + 1, chunk/6), 1)
-            time_scale = np.around(np.linspace(0, chunk*period*1000, num=len(sample_scale)), 2)
+            sample_scale = np.around(np.arange(0, signal_len + 1, signal_len/6), 1)
+            time_scale = np.around(np.linspace(0, signal_len*period*1000, num=len(sample_scale)), 2)
 
             ax1.set_xticks(sample_scale)
             ax1.set_xticklabels(sample_scale)
@@ -48,7 +59,7 @@ while True:
             
             # ax1.set_xticklabels(time_scale)
             # ax1.set(xlabel="t [ms]")
-            ax1.set_xlim(0, chunk)
+            # ax1.set_xlim(0, chunk)
 
 
             f_vec = samp_rate*np.arange(chunk/2)/chunk
@@ -58,11 +69,11 @@ while True:
             fft_data[1:] = 2*fft_data[1:]
 
             # plt.plot(sample_numbers, reading)
-            if len(ax1.lines) != 0:
-                del ax1.lines[0]
-                del ax2.lines[0]
+            # if len(ax1.lines) != 0:
+            #     del ax1.lines[0]
+                # del ax2.lines[0]
 
-            ax1.plot(reading, color='b')
+            ax1.plot(range(current_sample,signal_len), signal[current_sample:signal_len])
             # print(reading)
             ax2.plot(f_vec, fft_data)
 

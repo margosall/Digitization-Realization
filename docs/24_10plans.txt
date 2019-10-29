@@ -1,0 +1,23 @@
+1. Mis helid (3 tk)?
+2. Mis filtreid kasutame (oleneb helidest)?
+    * Piiranguks 16kHz sample rate
+3. Mis fingerprinting meetodit kasutame? 
+    * MFCC 
+    * Alternatiivid: https://arxiv.org/pdf/1305.1145.pdf
+      https://ieeexplore.ieee.org/stamp/stamp.jsp?tp=&arnumber=1203274&tag=1
+      https://pdfs.semanticscholar.org/c8de/3155af724044fe620325adc96760e4e78036.pdf
+4. Crosscorrelation (Do we need it)?
+5. Kuhu fingerprint salvestada? 
+    * Kui väike siis RAM, muidu SD
+6. Mis algortmiga võrdleme?
+    * KNN (K nearest neighbours)
+    * Alternatiivid: vt 3. artikkleid
+7. Windowing/overlap?
+    * MFCC peaks kasutama
+8. Kui on mitu heli korraga mis siis?
+    * Võtame tugevaima või
+    * Üritame eraldada (?)
+
+Taskid:
+    Margo: MFCC (fingerprinting)
+    Kaido: RTOS research

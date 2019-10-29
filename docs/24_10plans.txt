@@ -12,6 +12,7 @@
 6. Mis algortmiga võrdleme?
     * KNN (K nearest neighbours)
     * Alternatiivid: vt 3. artikkleid
+    **BAYESIAN CLASSIFIER** https://en.wikipedia.org/wiki/Naive_Bayes_classifier
 7. Windowing/overlap?
     * MFCC peaks kasutama
 8. Kui on mitu heli korraga mis siis?

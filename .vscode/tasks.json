@@ -9,6 +9,29 @@
           "cwd": "${workspaceFolder}"
         },
         "command": "esp/openocd-esp32/bin/openocd -f esp/openocd-esp32/share/openocd/scripts/interface/ftdi/esp32_devkitj_v1.cfg -f esp/openocd-esp32/share/openocd/scripts/board/esp32-wrover-kit-3.3v.cfg",
+        "group": "build"
+      },
+      {
+        "type": "shell",
+        "label": "gcc build active file",
+        "command": "/usr/bin/gcc",
+        "args": [
+          "-g",
+          "${file}",
+          "-o",
+          "${fileDirname}/${fileBasenameNoExtension}",
+          "-lm"
+        ],
+        "options": {
+          "cwd": "/usr/bin"
+        },
+        "problemMatcher": [
+          "$gcc"
+        ],
+        "group": {
+          "kind": "build",
+          "isDefault": true
+        }
       }
     ]
-  }
+}

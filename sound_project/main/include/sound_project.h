@@ -10,3 +10,4 @@ typedef struct {
 
 sound_input_struct_t *setupRecording(int sampleRate, audio_hal_codec_mode_t source, int32_t outputChannels);
 void cleanupRecording(sound_input_struct_t *soundInput);
+void readSignal(void *soundInput);

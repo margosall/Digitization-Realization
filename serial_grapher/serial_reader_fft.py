@@ -72,9 +72,9 @@ while True:
 
             # Calc FFT
             f_vec = samp_rate*np.arange(chunk/2)/chunk
-            fft_data = (np.abs( np.fft.fft(reading) )[0:int(np.floor(chunk/2))])/chunk
-            fft_data[1:] = 2*fft_data[1:]
-            ax2.plot(f_vec, fft_data)
+            # fft_data = (np.abs( np.fft.fft(reading) )[0:int(np.floor(chunk/2))])/chunk
+            # fft_data[1:] = 2*fft_data[1:]
+            # ax2.plot(f_vec, fft_data)
 
             # plt.plot(sample_numbers, reading)
             if len(ax1.lines) != 0:

@@ -2,8 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.signal import correlate
 
-a,b, N = 0, 10, 1000        #Boundaries, datapoints
-shift = -1                 #Shift, note 3/10 of L = b-a
+a,b, N = 0, 1, 1000        #Boundaries, datapoints
+shift = 0                 #Shift, note 3/10 of L = b-a
 
 x = np.linspace(a,b,N)
 x1 = 1*x + shift

@@ -10,6 +10,8 @@
         "ai_audio_v1_0_board.h": "c",
         "audio_common.h": "c",
         "esp_dsp.h": "c",
-        "random": "c"
+        "random": "c",
+        "matrixmult.h": "c",
+        "calcdtw_c.h": "c"
     }
 }

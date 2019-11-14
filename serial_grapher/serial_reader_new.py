@@ -27,7 +27,7 @@ ax2.set(xlabel='Frequency [Hz]')
 # plt.ylabel('Amplitude [Pa]')
 ax2.set_xscale('log')
 
-ser = serial.Serial('/dev/ttyUSB1', 1500000)
+ser = serial.Serial('/dev/ttyUSB0', 1500000)
 
 signal = []
 
@@ -42,8 +42,8 @@ while True:
         try:
             reading = list(map(int, ser.readline().decode('utf-8').strip().split(' ')))
 
-            # signal.extend(reading)
-            signal = reading
+            signal.extend(reading)
+            # signal = reading
 
             signal_len = len(signal)
             
@@ -77,8 +77,8 @@ while True:
             ax2.plot(f_vec, fft_data)
 
             # plt.plot(sample_numbers, reading)
-            if len(ax1.lines) != 0:
-                del ax1.lines[0]
+            # if len(ax1.lines) != 0:
+            #     del ax1.lines[0]
                 # del ax2.lines[0]
 
             ax1.plot(range(current_sample,signal_len), signal[current_sample:signal_len])

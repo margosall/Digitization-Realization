@@ -18,5 +18,5 @@ float maximumOfVectorFloat(float *vector, uint32_t vectorLen);
 
 float calculateDistance(float *mfcc1, float *mfcc2, uint32_t mfcc1Len, uint32_t mfcc2Len, uint_fast32_t warpingConstant);
 
-float LBKeogh(float *mfcc1, float *mfcc2, uint32_t mfccLen, int_fast32_t warpingConstant);
+float LBKeogh(float *mfcc1, float *mfcc2, uint32_t mfcc1Len, uint32_t mfcc2Len, uint_fast32_t warpingConstant);
 #endif

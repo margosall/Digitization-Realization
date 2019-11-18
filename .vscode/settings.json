@@ -12,6 +12,13 @@
         "esp_dsp.h": "c",
         "random": "c",
         "matrixmult.h": "c",
-        "calcdtw_c.h": "c"
+        "calcdtw_c.h": "c",
+        "esp_peripherals.h": "c",
+        "periph_button.h": "c",
+        "raw_stream.h": "c",
+        "dtwdist.h": "c",
+        "filter_resample.h": "c",
+        "freertos.h": "c",
+        "*.ipp": "c"
     }
 }

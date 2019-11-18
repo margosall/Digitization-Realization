@@ -17,12 +17,15 @@
 
 #include "audio_common.h"
 #include "audio_pipeline.h"
+#include "audio_event_iface.h"
 
 #include "i2s_stream.h"
 #include "raw_stream.h"
+#include "wav_decoder.h"
 
 #include "esp_peripherals.h"
 #include "periph_button.h"
+#include "fatfs_stream.h"
 
 #include "filter_resample.h"
 
@@ -39,44 +42,91 @@ static const char *EVENT_TAG = "board";
 
 //AUDIO CONFIGURATION
 #define AUDIOCHUNKSIZE 480
-#define SAMPLERATE 16000
+#define SAMPLERATE 48000
 #define DOWNSAMPLE_RATE 16000
 #define OUTPUTCHANNELS 1
 
 //MFCC and DTW
 #define MFCC_COEFF_COUNT 12
-#define DTW_WARPING_WINDOW 100
-#define MFCC_LENGTH 600
+#define DTW_WARPING_WINDOW 175
+#define MFCC_LENGTH 660
 
 //INPUT SOURCES
 #define MIC AUDIO_HAL_CODEC_MODE_ENCODE
+#define BOTH AUDIO_HAL_CODEC_MODE_BOTH
 #define LINEIN AUDIO_HAL_CODEC_MODE_LINE_IN
 #define SOURCE LINEIN
 
 
 
-sound_buffer *audio_buffer;
-
-
+sound_buffer *audioBuffer;
+audio_streams *streams;
+detection_model *models;
 
 void app_main() {
-    audio_buffer = (sound_buffer *) heap_caps_malloc(sizeof(sound_buffer), MALLOC_CAP_8BIT);
-    audio_buffer->filledSamples = 0;
+    audioBuffer = (sound_buffer *) heap_caps_malloc(sizeof(sound_buffer), MALLOC_CAP_8BIT);
+    streams = (audio_streams *) heap_caps_malloc(sizeof(audio_streams), MALLOC_CAP_8BIT);
+    models = (detection_model *) heap_caps_malloc(sizeof(detection_model), MALLOC_CAP_8BIT);
+    models->detectedIndex = -1;
+    models->mfccsInModel = MFCCS_IN_MODEL;
+    models->mfccs[0] = blender_mfcc;
+    models->mfccs[1] = humvee_mfcc;
+    models->mfccs[2] = gun2_mfcc;
+    models->mfccs[3] = water_mfcc;
+    audioBuffer->filledSamples = 0;
 
-    sound_input_struct_t *soundInput = setupRecording(SAMPLERATE, SOURCE, OUTPUTCHANNELS);
+    
+    audio_event_iface_handle_t evt = setupBoard(SOURCE);
+    sound_output_struct_t *soundOutput = setupPlayer();
+    soundOutput->playing = 0;
+    sound_input_struct_t *soundInput = setupRecording(SAMPLERATE, OUTPUTCHANNELS);
+
+    streams->inputStream = soundInput;
+    streams->outputStream = soundOutput;
+
     printf("Free Size %u\r\n",heap_caps_get_free_size(MALLOC_CAP_8BIT));
     
     xTaskCreatePinnedToCore(readSignal,
                 "readSignal",
-                8192*10,
+                8192*8,
                 (void*)soundInput,
                 1,
                 NULL,
                 0);
                 
-    //xTaskCreate(printMFCC, "printMFCC", 8192, NULL, 2, NULL);
     printf("Free Size %u\r\n",heap_caps_get_free_size(MALLOC_CAP_8BIT));
 
+
+
+    // while(1) {
+    //     audio_event_iface_msg_t msg;
+    //     audio_event_iface_listen(evt, &msg, 0);
+    //     if ((int) msg.data == get_input_play_id() && !soundOutput->playing) {
+    //         printf("Play button pressed\n");
+    //         // audio_pipeline_stop(soundOutput->pipeline);
+    //         soundOutput->playing = 1;
+    //         // audio_element_set_uri(soundOutput->fatfs_reader, "/sdcard/gun1.wav");
+    //         audio_pipeline_run(soundOutput->pipeline);
+    //     }
+    //     if ((int) msg.data == get_input_set_id() && soundOutput->playing) {
+    //         printf("Stop button pressed\n");
+    //         stopPlaying(soundOutput);
+    //         audio_element_set_uri(soundOutput->fatfs_reader, "/sdcard/test.wav");
+    //         soundOutput->playing = 0;
+    //     }
+    //     // memset(&msg, 0, sizeof(audio_event_iface_msg_t));
+    //     vTaskDelay(100 / portTICK_PERIOD_MS);
+    // }
+
+}
+
+void stopPlaying(sound_output_struct_t *soundOutput) {
+        audio_pipeline_stop(soundOutput->pipeline);
+        audio_pipeline_wait_for_stop(soundOutput->pipeline);
+        // audio_element_reset_state(soundOutput->decoder);
+        // audio_element_reset_state(soundOutput->i2s_stream_writer);
+        // audio_pipeline_reset_ringbuffer(soundOutput->pipeline);
+        // audio_pipeline_reset_items_state(soundOutput->pipeline);
 }
 
 float int16ToFloatScaling(int16_t toNormalize) {
@@ -113,6 +163,24 @@ void printSignal(int16_t *signal) {
         printf("\n");
 }
 
+uint32_t FindNearestMatch(detection_model *models) {
+    float bestSoFar = INFINITY;
+    float LBDist = INFINITY;
+    float trueDist = INFINITY;
+    for (int32_t i = 0; i < models->mfccsInModel; i++)
+    {
+        LBDist = LBKeogh(models->currentMFCC, models->mfccs[i], MFCC_LENGTH, DTW_WARPING_WINDOW);
+        printf("LBKeogh distance:%f at model %d ", LBDist, i);
+        if (LBDist < bestSoFar) { 
+            trueDist = calculateDistance(models->currentMFCC, models->mfccs[i], MFCC_LENGTH, MFCC_LENGTH, DTW_WARPING_WINDOW);
+            printf("DTW distance:%f at model %d ", trueDist, i);
+        }
+        if (trueDist < bestSoFar) bestSoFar = trueDist, models->detectedIndex = i;
+        printf("\n");
+    }
+    return models->detectedIndex;
+}
+
 
 void readSignal(void *soundInput) {
     sound_input_struct_t *soundSettings = (sound_input_struct_t *) soundInput;
@@ -137,23 +205,24 @@ void readSignal(void *soundInput) {
     float blenderDistance = 0;
     float humveeDistance = 0;
     float gunDistance = 0;
-    float waterDistance = 0;
+    float waterDistance = 0; 
 
     for(;;) {
         // Read audio samples from pipeline
         raw_stream_read(soundSettings->raw_read, (char *)soundSettings->buffer, AUDIOCHUNKSIZE * sizeof(int16_t));
 
+        // printSignal(soundSettings->buffer);
 
         // Copy read samples from buffer to bigger buffer
-        memcpy(&audio_buffer->sampleBuffer[audio_buffer->filledSamples], soundSettings->buffer, sizeof(int16_t) * AUDIOCHUNKSIZE);
+        memcpy(&audioBuffer->sampleBuffer[audioBuffer->filledSamples], soundSettings->buffer, sizeof(int16_t) * AUDIOCHUNKSIZE);
         // Update buffer counter
-        audio_buffer->filledSamples += AUDIOCHUNKSIZE;
+        audioBuffer->filledSamples += AUDIOCHUNKSIZE;
 
         // If buffer is full
-        if (audio_buffer->filledSamples == SAMPLE_BUFFER_SIZE) {
+        if (audioBuffer->filledSamples == SAMPLE_BUFFER_SIZE) {
 
             // Calculate MFCC coefficents on long buffer
-            frames = csf_mfcc(audio_buffer->sampleBuffer,
+            frames = csf_mfcc(audioBuffer->sampleBuffer,
                             aSignalLen, 
                             aSampleRate, 
                             aWinLen, 
@@ -169,15 +238,31 @@ void readSignal(void *soundInput) {
                             aWinFunc, 
                             aMFCC);
 
+            models->currentMFCC = *aMFCC;
+
             // Calculate distances between MFCCs // frames * MFCC_COEFF_COUNT
             unsigned start = xthal_get_ccount(); //benchmarking
-            blenderDistance = calculateDistance(*aMFCC, blender_mfcc , frames * MFCC_COEFF_COUNT, MFCC_LENGTH, DTW_WARPING_WINDOW);
-            humveeDistance = calculateDistance(*aMFCC, humvee_mfcc, frames * MFCC_COEFF_COUNT, MFCC_LENGTH, DTW_WARPING_WINDOW);
-            gunDistance = calculateDistance(*aMFCC, gun2_mfcc, frames * MFCC_COEFF_COUNT, MFCC_LENGTH, DTW_WARPING_WINDOW);
-            waterDistance = calculateDistance(*aMFCC, water_mfcc, frames * MFCC_COEFF_COUNT, MFCC_LENGTH, DTW_WARPING_WINDOW);
+            // blenderDistance = LBKeogh(blender_mfcc, *aMFCC, MFCC_LENGTH, MFCC_LENGTH, DTW_WARPING_WINDOW);
+            // humveeDistance = LBKeogh(humvee_mfcc, *aMFCC, MFCC_LENGTH, MFCC_LENGTH, DTW_WARPING_WINDOW);
+            // gunDistance = LBKeogh(gun2_mfcc, *aMFCC, MFCC_LENGTH, MFCC_LENGTH, DTW_WARPING_WINDOW);
+            // waterDistance = LBKeogh(water_mfcc, *aMFCC, MFCC_LENGTH, MFCC_LENGTH, DTW_WARPING_WINDOW);
+            // blenderDistance = calculateDistance(*aMFCC, blender_mfcc , MFCC_LENGTH, MFCC_LENGTH, DTW_WARPING_WINDOW);
+            // humveeDistance = calculateDistance(*aMFCC, humvee_mfcc, MFCC_LENGTH, MFCC_LENGTH, DTW_WARPING_WINDOW);
+            // gunDistance = calculateDistance(*aMFCC, gun2_mfcc, MFCC_LENGTH, MFCC_LENGTH, DTW_WARPING_WINDOW);
+            // waterDistance = calculateDistance(*aMFCC, water_mfcc, MFCC_LENGTH, MFCC_LENGTH, DTW_WARPING_WINDOW);
+            zNormalizeMfcc(models->currentMFCC, MFCC_COEFF_COUNT);
+            printf("Best match is model index: %d\n", FindNearestMatch(models));
+
             unsigned end = xthal_get_ccount(); //benchmarking
             printf("%d\n", end - start);
-            printf("Blender: %f\tHumvee: %f\tGun: %f\tWater: %f\n", blenderDistance, humveeDistance, gunDistance, waterDistance);
+            // printf("Blender: %f\n", blenderDistance);
+
+            // printf("Blender: %f\tHumvee: %f\tGun: %f\tWater: %f\n", blenderDistance, humveeDistance, gunDistance, waterDistance);
+
+            // if (blenderDistance < humveeDistance && blenderDistance < gunDistance && blenderDistance < waterDistance) {
+            //         audio_element_set_uri(streams->outputStream->fatfs_reader, "/sdcard/blender.wav");
+            //         audio_pipeline_run(streams->outputStream->pipeline);
+            // }
 
             // Free allocated MFCC buffer from csf_mfcc function
             free(*aMFCC);
@@ -186,20 +271,47 @@ void readSignal(void *soundInput) {
 
             
             // Buffer is used.
-            audio_buffer->filledSamples = 0;
+            audioBuffer->filledSamples = 0;
         }
 
     }
     free(aMFCC);
 }
 
-sound_input_struct_t *setupRecording(int sampleRate, audio_hal_codec_mode_t source, int32_t outputChannels)
-{
+
+
+audio_event_iface_handle_t setupBoard(audio_hal_codec_mode_t source) {
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set(TAG, ESP_LOG_INFO);
     esp_log_level_set(EVENT_TAG, ESP_LOG_INFO);
 
+    ESP_LOGI(TAG, "[ 1 ] Initialize the peripherals");
+    esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
+    esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
 
+    ESP_LOGI(TAG, "[ 1.1 ] Initialize sd card");
+    audio_board_sdcard_init(set);
+
+    ESP_LOGI(TAG, "[ 1.2 ] Initialize keys");
+    audio_board_key_init(set);
+
+    ESP_LOGI(EVENT_TAG, "[ 1.3 ] Start codec chip");
+    audio_board_handle_t board_handle = audio_board_init();
+    audio_hal_ctrl_codec(board_handle->audio_hal, source, AUDIO_HAL_CTRL_START);
+
+    ESP_LOGI(TAG, "[ 1.4 ] Set up  event listener");
+    audio_event_iface_cfg_t evt_cfg = AUDIO_EVENT_IFACE_DEFAULT_CFG();
+    audio_event_iface_handle_t evt = audio_event_iface_init(&evt_cfg);
+
+    ESP_LOGI(TAG, "[ 1.5 ] Listening event from peripherals");
+    audio_event_iface_set_listener(esp_periph_set_get_event_iface(set), evt);
+
+    return evt;
+}
+
+
+sound_input_struct_t *setupRecording(int sampleRate, int32_t outputChannels)
+{
     sound_input_struct_t *soundInput = (sound_input_struct_t *)malloc(sizeof(sound_input_struct_t));
     int16_t *buff = (int16_t *)heap_caps_malloc(AUDIOCHUNKSIZE * sizeof(int16_t), MALLOC_CAP_8BIT);
     audio_pipeline_handle_t pipeline;
@@ -209,10 +321,6 @@ sound_input_struct_t *setupRecording(int sampleRate, audio_hal_codec_mode_t sour
         ESP_LOGE(EVENT_TAG, "Memory allocation failed!");
         return NULL;
     }
-
-    ESP_LOGI(EVENT_TAG, "[ 1 ] Start codec chip");
-    audio_board_handle_t board_handle = audio_board_init();
-    audio_hal_ctrl_codec(board_handle->audio_hal, source, AUDIO_HAL_CTRL_START);
 
     ESP_LOGI(EVENT_TAG, "[ 2.0 ] Create audio pipeline for recording");
     audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
@@ -262,6 +370,47 @@ sound_input_struct_t *setupRecording(int sampleRate, audio_hal_codec_mode_t sour
     return soundInput;
 }
 
+sound_output_struct_t *setupPlayer(void) {
+    audio_pipeline_handle_t pipeline;
+    audio_element_handle_t fatfs_stream_reader, i2s_stream_writer, wav_decoder;
+
+    sound_output_struct_t *outputStream = (sound_output_struct_t *) malloc(sizeof(sound_output_struct_t));
+
+    audio_pipeline_cfg_t pipeline_cfg = DEFAULT_AUDIO_PIPELINE_CONFIG();
+    pipeline = audio_pipeline_init(&pipeline_cfg);
+    mem_assert(pipeline);
+
+    ESP_LOGI(TAG, "[ * ] Play from sdcard");
+    fatfs_stream_cfg_t fatfs_read_cfg = FATFS_STREAM_CFG_DEFAULT();
+    fatfs_read_cfg.type = AUDIO_STREAM_READER;
+    fatfs_stream_reader = fatfs_stream_init(&fatfs_read_cfg);
+
+    i2s_stream_cfg_t i2s_sdcard_cfg = I2S_STREAM_CFG_DEFAULT();
+    i2s_sdcard_cfg.type = AUDIO_STREAM_WRITER;
+    i2s_sdcard_cfg.i2s_config.sample_rate = 48000;
+    i2s_stream_writer = i2s_stream_init(&i2s_sdcard_cfg);
+
+    ESP_LOGI(TAG, "[3.3] Create wav decoder to decode wav file");
+    wav_decoder_cfg_t wav_cfg = DEFAULT_WAV_DECODER_CONFIG();
+    wav_decoder = wav_decoder_init(&wav_cfg);
+
+    ESP_LOGI(TAG, "[3.4] Register all elements to audio pipeline");
+    audio_pipeline_register(pipeline, fatfs_stream_reader, "file");
+    audio_pipeline_register(pipeline, wav_decoder, "wav");
+    audio_pipeline_register(pipeline, i2s_stream_writer, "i2s");
+
+    ESP_LOGI(TAG, "[3.5] Link it together [sdcard]-->fatfs_stream-->wav_decoder-->i2s_stream-->[codec_chip]");
+    audio_pipeline_link(pipeline, (const char *[]) {"file", "wav", "i2s"}, 3);
+    
+    ESP_LOGI(TAG, "[3.6] Set up  uri (file as fatfs_stream, wav as wav decoder, and default output is i2s)");
+
+    outputStream->pipeline = pipeline;
+    outputStream->decoder = wav_decoder;
+    outputStream->fatfs_reader = fatfs_stream_reader;
+
+    return outputStream;
+}
+
 void cleanupRecording(sound_input_struct_t *soundInput)
 {
     ESP_LOGI(EVENT_TAG, "[ 6 ] Stop audio_pipeline");
@@ -285,4 +434,34 @@ void cleanupRecording(sound_input_struct_t *soundInput)
     soundInput->buffer = NULL;
     free(soundInput);
     soundInput = NULL;
+}
+
+float zNormalizeMfcc(float *mfcc, int32_t numOfCoeff) {
+    float *means = (float *) heap_caps_calloc(numOfCoeff, sizeof(float), MALLOC_CAP_8BIT);
+    float *deviations = (float *) heap_caps_calloc(numOfCoeff, sizeof(float), MALLOC_CAP_8BIT);
+    for (int32_t i = 0, coeffCounter = 0; i < MFCC_LENGTH; i++, coeffCounter++) {
+        if (coeffCounter == numOfCoeff) coeffCounter = 0;
+        means[coeffCounter] += mfcc[i];
+        if (i >= (MFCC_LENGTH - numOfCoeff)) means[coeffCounter] /= (MFCC_LENGTH / numOfCoeff); 
+    }
+    
+    for (int32_t i = 0, coeffCounter = 0; i < MFCC_LENGTH; i++, coeffCounter++) {
+        if (coeffCounter == numOfCoeff) coeffCounter = 0;
+        deviations[coeffCounter] += (mfcc[i] - means[coeffCounter]) * (mfcc[i] - means[coeffCounter]);
+        if (i >= (MFCC_LENGTH - numOfCoeff)) {
+            deviations[coeffCounter] /= ((MFCC_LENGTH / numOfCoeff)); 
+            deviations[coeffCounter] = sqrt(deviations[coeffCounter]);
+        }
+    }
+
+
+    for (int32_t i = 0, coeffCounter = 0; i < MFCC_LENGTH; i++, coeffCounter++) {
+        if (coeffCounter == numOfCoeff) coeffCounter = 0;
+        mfcc[i] = (mfcc[i] - means[coeffCounter]) / deviations[coeffCounter]; 
+    }
+
+    free(means);
+    free(deviations);
+
+    return 0;
 }

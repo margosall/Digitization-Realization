@@ -1,7 +1,5 @@
 #include "DTWdist.h"
 
-//https://www.cs.unm.edu/~mueen/DTW.pdf
-
 void printCostMatrixFloat(float **costMatrix, uint32_t xSize, uint32_t ySize) {
     for (int32_t col = 0; col < xSize; col++) {
         for (int32_t row = 0; row < ySize; row++) {
@@ -74,8 +72,8 @@ float calculateDistance(float *mfcc1, float *mfcc2, uint32_t mfcc1Len, uint32_t 
         jMin = MIN(mfcc2Len, i + w);
         // printf("%d\t%d\n", jMax, jMin);
         for (j = jMax; j < jMin; j++) {
-            cost = (mfcc1[i] - mfcc2[j]) * (mfcc1[i] - mfcc2[j]);
-
+            cost = fabs(mfcc1[i] - mfcc2[j]);
+            // printf("%d\t%d\t%f\t%f\t%f\n", i, j, mfcc1[i] - mfcc2[j], mfcc1[i], mfcc2[i]);
             minVector[0] = costMatrix[i-1][j];
             minVector[1] = costMatrix[i][j - 1];
             minVector[2] = costMatrix[i - 1][j - 1];
@@ -91,10 +89,10 @@ float calculateDistance(float *mfcc1, float *mfcc2, uint32_t mfcc1Len, uint32_t 
     }
     free(costMatrix);
 
-    return sqrt(costMatrix[mfcc1Len - 1][mfcc2Len - 1]);
+    return costMatrix[mfcc1Len - 1][mfcc2Len - 1];
 }
 
-float LBKeogh(float *refMfcc, float *inputMfcc, uint32_t mfccLen, int_fast32_t warpingConstant) {
+float LBKeogh(float *mfcc1, float *mfcc2, uint32_t mfcc1Len, uint32_t mfcc2Len, uint_fast32_t warpingConstant) {
     float distance = 0;
     float upperBound = 0;
     float lowerBound = 0;
@@ -103,15 +101,16 @@ float LBKeogh(float *refMfcc, float *inputMfcc, uint32_t mfccLen, int_fast32_t w
     int32_t endIndex = 0;
 
 
-    for (i = 0; i < mfccLen; i++) {
+    for (i = 0; i < mfcc1Len; i++) {
         ((i - warpingConstant) >= 0) ? startIndex = (i - warpingConstant) : 0;
-        ((i + warpingConstant) <= mfccLen - 1) ? endIndex = (i + warpingConstant): 0;
-        lowerBound = minimumOfVectorFloat(&inputMfcc[startIndex], (mfccLen - endIndex - 1));
-        upperBound = maximumOfVectorFloat(&inputMfcc[startIndex], (mfccLen - endIndex - 1));
+        endIndex = i + warpingConstant;
+        lowerBound = minimumOfVectorFloat(&mfcc2[startIndex], (mfcc1Len - endIndex));
+        upperBound = maximumOfVectorFloat(&mfcc2[startIndex], (mfcc1Len - endIndex));
+    
+        if (i > upperBound) distance += ((i - upperBound) * (i - upperBound));
+        else if (i < lowerBound) distance += ((i - lowerBound) * (i - lowerBound));
 
-        if (refMfcc[i] > upperBound) distance += ((refMfcc[i] - upperBound) * (refMfcc[i] - upperBound));
-        else if (refMfcc[i] < lowerBound) distance += ((refMfcc[i] - lowerBound) * (refMfcc[i] - lowerBound));
     }
 
-    return sqrt(distance);
+    return distance;
 }

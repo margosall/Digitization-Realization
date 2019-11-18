@@ -6,7 +6,7 @@ from python_speech_features import mfcc
 
 
 
-filenames = ["water_downsampled.wav", "humvee_downsampled.wav", "blender_downsampled.wav"]
+filenames = ["blender2_downsampled.wav" ,"gun2_downsampled.wav", "water_downsampled.wav", "humvee_downsampled.wav", "blender_downsampled.wav"]
 
 
 def extract_features(filename):
@@ -24,10 +24,10 @@ def extract_features(filename):
     # remove 0 index coeff
     features = np.delete(features, (0), axis=1)
 
-    mean = np.mean(features, axis=0)
-    std = np.std(features, axis=0)
+    # mean = np.mean(features, axis=0)
+    # std = np.std(features, axis=0)
 
-    features = (features - mean) / std
+    # features = (features - mean) / std
 
     c_string = "csf_float " + filename.split("_")[0] + "_mfcc[" + str(features.shape[0] * features.shape[1]) + "] = {"
 
@@ -37,7 +37,7 @@ def extract_features(filename):
 
     c_string += "};"
 
-    plt.matshow(features)
+    # plt.matshow(features)
 
     print(c_string)
 

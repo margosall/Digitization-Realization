@@ -83,9 +83,6 @@ float calculateDistance(float *mfcc1, float *mfcc2, uint32_t mfcc1Len, uint32_t 
         }
     }
 
-    // printCostMatrixFloat(costMatrix, mfcc1Len, mfcc2Len);
-    // printf("\n");
-
     for (int32_t i = 0; i < mfcc1Len; i++) {
         free(costMatrix[i]);
     }

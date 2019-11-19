@@ -57,7 +57,7 @@ static const char *EVENT_TAG = "board";
 #define MIC AUDIO_HAL_CODEC_MODE_ENCODE
 #define BOTH AUDIO_HAL_CODEC_MODE_BOTH
 #define LINEIN AUDIO_HAL_CODEC_MODE_LINE_IN
-#define SOURCE LINEIN
+#define SOURCE MIC
 
 
 
@@ -246,7 +246,7 @@ void readSignal(void *soundInput) {
 
 
             models->currentMFCC = dumpFirstCoeffAndCalcPower(*aMFCC, frames, aNCep, &power);
-            printf("%f\n", power);
+            // printf("%f\n", power);
 
             // zNormalizeMfcc(models->currentMFCC, 12);
 
@@ -254,8 +254,10 @@ void readSignal(void *soundInput) {
             // unsigned start = xthal_get_ccount(); //benchmarking
 
             if ((power > 10 && SOURCE == LINEIN) || (power > 13 && SOURCE == MIC)) {
+                
+                printf("\n");
                 printf("Best match in model is labeled: %s\n", labels[FindNearestMatch(models)]);
-                printf("%f\n", models->differences);
+                // printf("%f\n", models->differences);
                 // playAnswer();
             }
             else printf("No sound detected on spectrum\n");

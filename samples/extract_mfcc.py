@@ -6,7 +6,7 @@ from python_speech_features import mfcc
 
 
 
-filenames = ["blender2_downsampled.wav" ,"gun2_downsampled.wav", "water_downsampled.wav", "humvee_downsampled.wav", "blender_downsampled.wav"]
+filenames = ["blenderunning.wav"]
 
 
 def extract_features(filename):

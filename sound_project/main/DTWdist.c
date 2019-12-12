@@ -88,7 +88,7 @@ float calculateDistance(float *mfcc1, float *mfcc2, uint32_t mfcc1Len, uint32_t 
     }
     free(costMatrix);
 
-    return sqrt(costMatrix[mfcc1Len - 1][mfcc2Len - 1]);
+    return costMatrix[mfcc1Len - 1][mfcc2Len - 1];
 }
 
 
@@ -164,10 +164,10 @@ float calculateDistanceQuitEarly(float *mfcc1, float *mfcc2, uint32_t mfcc1Len, 
     }
     free(costMatrix);
 
-    return sqrt(costMatrix[mfcc1Len - 1][mfcc2Len - 1]);
+    return costMatrix[mfcc1Len - 1][mfcc2Len - 1];
 }
 
-float LBKeogh(float *refMfcc, float *inputMfcc, uint32_t mfccLen, int_fast32_t warpingConstant) {
+float LBKeogh(float *refMfcc, float *inputMfcc, uint32_t mfccLen, int_fast32_t warpingConstant, uint32_t bestSoFar) {
     float distance = 0;
     float upperBound = 0;
     float lowerBound = 0;
@@ -184,8 +184,12 @@ float LBKeogh(float *refMfcc, float *inputMfcc, uint32_t mfccLen, int_fast32_t w
 
         if (refMfcc[i] > upperBound) distance += ((refMfcc[i] - upperBound) * (refMfcc[i] - upperBound));
         else if (refMfcc[i] < lowerBound) distance += ((refMfcc[i] - lowerBound) * (refMfcc[i] - lowerBound));
+        if (distance > bestSoFar) {
+            distance = INFINITY;
+            break;
+        }
     }
 
-    return sqrt(distance);
+    return distance;
 }
 

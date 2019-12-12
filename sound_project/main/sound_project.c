@@ -53,18 +53,21 @@ static const char *EVENT_TAG = "board";
 
 #define MFCC_LENGTH 300
 
+#define LINEIN_TRESHHOLD 10
+#define MIC_TRESHHOLD 14
+
 //INPUT SOURCES
 #define MIC AUDIO_HAL_CODEC_MODE_ENCODE
 #define BOTH AUDIO_HAL_CODEC_MODE_BOTH
 #define LINEIN AUDIO_HAL_CODEC_MODE_LINE_IN
-#define SOURCE MIC
+#define SOURCE LINEIN
 
 
 
 sound_buffer *audioBuffer;
 audio_streams *streams;
 detection_model *models;
-const char *labels[] = {"water", "humvee","gun", "blender", "blender2"};
+const char *labels[] = {"blender", "humvee","gun", "water", "blender2"};
 const char *responses[] = {"/sdcard/blender.wav","/sdcard/humvee.wav","/sdcard/gun.wav", "/sdcard/water.wav"};
 
 void app_main() {
@@ -73,15 +76,15 @@ void app_main() {
     models = (detection_model *) heap_caps_malloc(sizeof(detection_model), MALLOC_CAP_8BIT);
     models->detectedIndex = -1;
     models->mfccsInModel = MFCCS_IN_MODEL;
-    models->mfccs[0] = water_mfcc;
+    models->mfccs[0] = blenderrunning_mfcc;
     models->mfccs[1] = humvee_mfcc;
     models->mfccs[2] = gun2_mfcc;
+    models->mfccs[3] = water_mfcc;
     // models->mfccs[3] = blender_mfcc;
-    models->mfccs[3] = blender2_mfcc;
     audioBuffer->filledSamples = 0;
 
     
-    setupBoard(SOURCE);
+    setupBoard(SOURCE, 0);
     sound_output_struct_t *soundOutput = setupPlayer();
     soundOutput->playing = 0;
     sound_input_struct_t *soundInput = setupRecording(SAMPLERATE, OUTPUTCHANNELS);
@@ -170,23 +173,34 @@ void printSignal(int16_t *signal) {
 
 uint32_t FindNearestMatch(detection_model *models) {
     float bestSoFar = INFINITY;
+    float bestSoFarEstimated = INFINITY;
     float LBDist = INFINITY;
     float trueDist = INFINITY;
     float sumOfDifferences = 0;
+    int32_t bestDTWCanditateIndex = -1;
+    int32_t bestLBCanditateIndex = -1;
     int32_t modelsCompared = 0;
     for (int32_t i = 0; i < models->mfccsInModel; i++)
     {
-        LBDist = LBKeogh(models->currentMFCC, models->mfccs[i], MFCC_LENGTH, LBK_WINDOW);
+        LBDist = LBKeogh(models->currentMFCC, models->mfccs[i], MFCC_LENGTH, LBK_WINDOW, bestSoFar);
+        if (LBDist < bestSoFarEstimated) bestSoFarEstimated = LBDist, bestLBCanditateIndex = i;
         printf("LBKeogh distance:%f at model %d ", LBDist, i);
         if (LBDist < bestSoFar) { 
             trueDist = calculateDistance(models->currentMFCC, models->mfccs[i], MFCC_LENGTH, MFCC_LENGTH, DTW_WARPING_WINDOW);
             printf("DTW distance:%f at model %d ", trueDist, i);
-            sumOfDifferences += trueDist, modelsCompared++;
+            // sumOfDifferences += trueDist, modelsCompared++;
         }
-        if (trueDist < bestSoFar) bestSoFar = trueDist, models->detectedIndex = i;
+        if (trueDist < bestSoFar) bestSoFar = trueDist, bestDTWCanditateIndex = i;
         printf("\n");
     }
-    models->differences = sumOfDifferences / modelsCompared - bestSoFar;
+    // models->differences = sumOfDifferences / modelsCompared - bestSoFar;
+
+    if (bestDTWCanditateIndex == bestLBCanditateIndex) {
+        models->detectedIndex = bestDTWCanditateIndex;
+    }
+    else {
+        models->detectedIndex = -1;
+    }
 
     return models->detectedIndex;
 }
@@ -246,17 +260,24 @@ void readSignal(void *soundInput) {
 
 
             models->currentMFCC = dumpFirstCoeffAndCalcPower(*aMFCC, frames, aNCep, &power);
-            // printf("%f\n", power);
+            printf("%f\n", power);
 
             // zNormalizeMfcc(models->currentMFCC, 12);
 
             // Calculate distances between MFCCs // frames * MFCC_COEFF_COUNT
             // unsigned start = xthal_get_ccount(); //benchmarking
 
-            if ((power > 10 && SOURCE == LINEIN) || (power > 13 && SOURCE == MIC)) {
+            if ((power > LINEIN_TRESHHOLD && SOURCE == LINEIN) || (power > MIC_TRESHHOLD && SOURCE == MIC)) {
                 
+                FindNearestMatch(models);
+                if (models->detectedIndex != -1) {
+                    printf("Best match in model is labeled: %s\n", labels[models->detectedIndex]);
+                }
+                else {
+                    printf("Couldn't detect any known sound\n");
+                }
                 printf("\n");
-                printf("Best match in model is labeled: %s\n", labels[FindNearestMatch(models)]);
+
                 // printf("%f\n", models->differences);
                 // playAnswer();
             }
@@ -295,7 +316,7 @@ float * dumpFirstCoeffAndCalcPower(float * input, int frames, uint32_t numOfCoef
     return output;
 }
 
-audio_event_iface_handle_t setupBoard(audio_hal_codec_mode_t source) {
+audio_event_iface_handle_t setupBoard(audio_hal_codec_mode_t source, uint32_t sdcardEnable) {
     esp_log_level_set("*", ESP_LOG_INFO);
     esp_log_level_set(TAG, ESP_LOG_INFO);
     esp_log_level_set(EVENT_TAG, ESP_LOG_INFO);
@@ -304,8 +325,10 @@ audio_event_iface_handle_t setupBoard(audio_hal_codec_mode_t source) {
     esp_periph_config_t periph_cfg = DEFAULT_ESP_PERIPH_SET_CONFIG();
     esp_periph_set_handle_t set = esp_periph_set_init(&periph_cfg);
 
-    ESP_LOGI(TAG, "[ 1.1 ] Initialize sd card");
-    audio_board_sdcard_init(set);
+    if (sdcardEnable) {
+        ESP_LOGI(TAG, "[ 1.1 ] Initialize sd card");
+        audio_board_sdcard_init(set);
+    }
 
     ESP_LOGI(TAG, "[ 1.2 ] Initialize keys");
     audio_board_key_init(set);
